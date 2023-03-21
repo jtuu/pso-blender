@@ -21,6 +21,8 @@ class Numeric:
         "I16": (int, "h"),
         "I32": (int, "l"),
         "F32": (float, "f"),
+        "Ptr16": (int, "H"),
+        "Ptr32": (int, "L")
     }
 
     type_sizes = {
@@ -99,6 +101,14 @@ class Serializable:
             if fmt:
                 fmt_str += fmt
         return Numeric.size_of_format(fmt_str)
+    
+    def pointer_member_offsets(self) -> list[int]:
+        offsets = []
+        for name in self.__dict__:
+            tp = typehint_of_name(name, self)
+            if tp == Numeric.Ptr16 or tp == Numeric.Ptr32:
+                offsets.append(self.offset_of_member(name))
+        return offsets
 
     def serialize_into(self, buf: CursorBuffer) -> int:
         """Writes serializable members of this object into given buffer"""
