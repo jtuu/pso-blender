@@ -55,18 +55,27 @@ for name in Numeric.type_info:
     setattr(Numeric, name, NewType(name, tp))
 
 
-class CursorBuffer:
-    def __init__(self):
-        self.buffer = bytearray(0)
+class ResizableBuffer:
+    def __init__(self, size):
+        self.buffer = bytearray(size)
+        self.capacity = size
         self.offset = 0
+    
+    def grow(self, by):
+        self.buffer += bytearray(by)
+        self.capacity += by
 
     def pack(self, fmt: str, *vals) -> int:
         """Returns absolute offset of where data was written"""
         offset_before = self.offset
-        size = Numeric.size_of_format(fmt)
-        self.buffer += bytearray(size) # Resize buffer
+        item_size = Numeric.size_of_format(fmt)
+        remaining = self.capacity - self.offset
+        # Grow if needed
+        if item_size > remaining:
+            need = item_size - remaining
+            self.grow(need)
         pack_into(fmt, self.buffer, self.offset, *vals)
-        self.offset += size
+        self.offset += item_size
         return offset_before
 
 
