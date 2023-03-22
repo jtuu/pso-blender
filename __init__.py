@@ -1,8 +1,10 @@
+import os
 import bpy
 from bpy_extras.io_utils import ExportHelper
 from bpy.props import StringProperty, BoolProperty, EnumProperty
 from bpy.types import Operator, Mesh
 from triangle_strip import find_strip
+import r_rel
 
 
 bl_info = {
@@ -10,15 +12,6 @@ bl_info = {
     "blender": (3, 4, 0),
     "category": "Export",
 }
-
-
-def mesh_faces(mesh: Mesh) -> list[tuple[int, int, int]]:
-    """Returns vertex indices of triangulated faces"""
-    faces = []
-    for poly in mesh.polygons:
-        for tri in poly.loop_triangles:
-            faces.append(tuple(tri.vertices))
-    return faces
 
 
 def filter_meshes_by_props(props: list[str]) -> list[Mesh]:
@@ -45,11 +38,13 @@ class ExportRel(Operator, ExportHelper):
     # ExportHelper mixin class uses this
     filename_ext = ".rel"
 
-    filter_glob: StringProperty( # type: ignore
+    filter_glob: StringProperty(
         default="*.rel",
         options={'HIDDEN'},
         maxlen=255,  # Max internal buffer length, longer would be clamped.
     )
+
+    filepath: StringProperty(subtype="FILE_PATH")
 
     def cancel_with_error(self, ex: Exception()):
         self.report({"ERROR"}, str(ex))
@@ -60,6 +55,11 @@ class ExportRel(Operator, ExportHelper):
             minimap_meshes = filter_meshes_by_props(["pso_minimap_radius"])
             render_meshes = filter_meshes_by_props(["pso_render_flags"])
             collision_meshes = filter_meshes_by_props(["pso_collision_flags"])
+        except Exception as ex:
+            return self.cancel_with_error(ex)
+        (noext, ext) = os.path.splitext(self.filepath)
+        try:
+            r_rel.write(noext + "_r" + ext, minimap_meshes)
         except Exception as ex:
             return self.cancel_with_error(ex)
         return {'FINISHED'}
