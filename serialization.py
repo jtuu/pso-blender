@@ -1,6 +1,6 @@
 import sys
 from dataclasses import dataclass
-from typing import NewType, get_type_hints
+from typing import NewType, get_type_hints, get_args
 from struct import pack, pack_into
 from warnings import warn
 
@@ -89,10 +89,11 @@ class Serializable:
         fmt = Numeric.format_of_type(typehint_of_name(member, self))
         if fmt:
             return fmt
-        warn("Serializable class \"{}\" has non-serializable member \"{}\"".format(type(self).__name__, member))
+        
         return None
 
     def offset_of_member(self, member: str) -> int:
+        # XXX: Only supports objects with primitive type members
         fmt_str = ""
         for name in self.__dict__:
             if name == member:
@@ -103,21 +104,74 @@ class Serializable:
         return Numeric.size_of_format(fmt_str)
     
     def pointer_member_offsets(self) -> list[int]:
+        # XXX: Only supports objects with primitive type members
         offsets = []
         for name in self.__dict__:
             tp = typehint_of_name(name, self)
             if tp == Numeric.Ptr16 or tp == Numeric.Ptr32:
                 offsets.append(self.offset_of_member(name))
         return offsets
+    
+    def _warn_unserializable(self, name):
+        warn("Serializable class \"{}\" has unserializable member \"{}\"".format(type(self).__name__, name))
 
-    def serialize_into(self, buf: CursorBuffer) -> int:
-        """Writes serializable members of this object into given buffer"""
-        fmt_str = ""
-        vals = []
-        # Get structlib format of each instance member
-        for name in self.__dict__:
+    def _visit(self, buf: ResizableBuffer, value, name, tp) -> int:
+        if isinstance(value, Serializable):
+            # Serialize object
+            return val.serialize_into(buf)
+
+        is_list = type(value) is list
+        is_tuple = type(value) is tuple
+        if is_list or is_tuple:
+            container_type = None
+            # Need to get typehint to get the element type
+            if name is not None:
+                container_type = typehint_of_name(name, self)
+            elif tp is not None:
+                container_type = tp
+            elem_types = get_args(container_type)
+            if len(elem_types) < 1:
+                # Can't continue
+                self._warn_unserializable(name)
+                return None
+            first_write_offset = None
+            for i in range(len(value)):
+                # Get type of current element
+                # Lists have one element type, tuples have n
+                type_idx = 0
+                if is_tuple:
+                    type_idx = i
+                elem_type = elem_types[type_idx]
+                # Visit element
+                offset = self._visit(buf, value[i], None, elem_type)
+                # Save offset of first write
+                if first_write_offset is None:
+                    first_write_offset = offset
+            return first_write_offset
+
+        # Value is primitive
+        # Determine format from name or type
+        fmt = None
+        if name is not None:
             fmt = self.format_of_member(name)
-            if fmt:
-                fmt_str += fmt
-                vals.append(self.__dict__[name])
-        return buf.pack(fmt_str, *vals)
+        elif tp is not None:
+            fmt = Numeric.format_of_type(tp)
+        if fmt is None:
+            # Can't continue
+            self._warn_unserializable(name)
+            return None
+        return buf.pack(fmt, value)
+
+    def serialize_into(self, buf: ResizableBuffer) -> int:
+        """Writes serializable members of this object into given buffer.
+        Returns absolute offset of where data was written."""
+        first_write_offset = None
+        # Visit members
+        for name in self.__dict__:
+            value = self.__dict__[name]
+            offset = self._visit(buf, value, name, None)
+            # Save offset of first write
+            if first_write_offset is None:
+                first_write_offset = offset
+        return offset
+            
