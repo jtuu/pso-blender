@@ -14,15 +14,15 @@ class Numeric:
     """Contains numeric types"""
     type_info = {
         # newtype name: python type, structlib format
-        "U8": (int, "B"),
-        "U16": (int, "H"),
-        "U32": (int, "L"),
-        "I8": (int, "b"),
-        "I16": (int, "h"),
-        "I32": (int, "l"),
-        "F32": (float, "f"),
-        "Ptr16": (int, "H"),
-        "Ptr32": (int, "L")
+        "U8": (int, "<B"),
+        "U16": (int, "<H"),
+        "U32": (int, "<L"),
+        "I8": (int, "<b"),
+        "I16": (int, "<h"),
+        "I32": (int, "<l"),
+        "F32": (float, "<f"),
+        "Ptr16": (int, "<H"),
+        "Ptr32": (int, "<L")
     }
 
     type_sizes = {
@@ -131,7 +131,7 @@ class Serializable:
     def _visit(self, buf: ResizableBuffer, value, name, tp) -> int:
         if isinstance(value, Serializable):
             # Serialize object
-            return val.serialize_into(buf)
+            return value.serialize_into(buf)
 
         is_list = type(value) is list
         is_tuple = type(value) is tuple

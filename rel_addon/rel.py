@@ -1,12 +1,12 @@
 from dataclasses import dataclass
-from serialization import Serializable, Numeric, ResizableBuffer
 from struct import pack_into
+from .serialization import Serializable, Numeric, ResizableBuffer
 
 
-@dataclass
 class Rel:
-    buf: ResizableBuffer = ResizableBuffer(0)
-    pointer_offsets: list[int] = []
+    def __init__(self):
+        self.buf: ResizableBuffer = ResizableBuffer(0)
+        self.pointer_offsets: list[int] = []
 
     def write(self, item: Serializable) -> int:
         ptr = item.serialize_into(self.buf)
@@ -34,7 +34,7 @@ class Rel:
             self.buf.pack("H", rel_offset)
         # Create trailer
         self.buf.grow(0x20)
-        pack_into("I", trailer, pointer_table_pointer_offset, pointer_table_offset)
-        pack_into("I", trailer, pointer_count_offset, pointer_count)
-        pack_into("I", trailer, payload_pointer_offset, payload_offset)
+        pack_into("I", self.buf.buffer, pointer_table_pointer_offset, pointer_table_offset)
+        pack_into("I", self.buf.buffer, pointer_count_offset, pointer_count)
+        pack_into("I", self.buf.buffer, payload_pointer_offset, payload_offset)
         return self.buf.buffer

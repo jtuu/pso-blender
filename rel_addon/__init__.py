@@ -3,8 +3,7 @@ import bpy
 from bpy_extras.io_utils import ExportHelper
 from bpy.props import StringProperty, BoolProperty, EnumProperty
 from bpy.types import Operator, Mesh
-from triangle_strip import find_strip
-import r_rel
+from . import r_rel
 
 
 bl_info = {
@@ -58,10 +57,8 @@ class ExportRel(Operator, ExportHelper):
         except Exception as ex:
             return self.cancel_with_error(ex)
         (noext, ext) = os.path.splitext(self.filepath)
-        try:
+        if len(minimap_meshes) > 0:
             r_rel.write(noext + "_r" + ext, minimap_meshes)
-        except Exception as ex:
-            return self.cancel_with_error(ex)
         return {'FINISHED'}
 
 

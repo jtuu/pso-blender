@@ -1,11 +1,19 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from bpy.types import Mesh
-from rel import Rel
-from serialization import Serializable, Numeric
-import util
-import triangle_strip
+from .rel import Rel
+from .serialization import Serializable, Numeric
+from . import util, triangle_strip
 
-(U8, U16, U32, I8, I16, I32, F32, Ptr16) = Numeric
+
+U8 = Numeric.U8
+U16 = Numeric.U16
+U32 = Numeric.U32
+I8 = Numeric.I8
+I16 = Numeric.I16
+I32 = Numeric.I32
+F32 = Numeric.F32
+Ptr16 = Numeric.Ptr16
+Ptr32 = Numeric.Ptr32
 
 
 @dataclass
@@ -25,7 +33,7 @@ class VertexListNode(Serializable):
     offset_to_next: U16 = 0
     unk1: U16 = 0
     vertex_count: U16 = 0
-    vertices: list[Vertex] = []
+    vertices: list[Vertex] = field(default_factory=list)
 
 
 @dataclass
@@ -34,7 +42,7 @@ class IndexListNode(Serializable):
     # Offset to next IndexListNode, BUT divided by two
     offset_to_next: U16 = 0
     strip_count: U16 = 0
-    indices: list[U16] = []
+    indices: list[U16] = field(default_factory=list)
 
 
 @dataclass
@@ -91,14 +99,14 @@ def write(path: str, rooms: list[Mesh]):
 
         vertex_node = VertexListNode(
             flags=0x29,
-            offset_to_next=Vertex.size() * len(vertices) / 4 + 1,
+            offset_to_next=Vertex.size() * len(vertices) // 4 + 1,
             vertex_count=len(vertices),
             vertices=vertices)
         vertex_list_terminator = VertexListNode(flags=0xff)
 
         index_node = IndexListNode(
             flags=0x0340,
-            offset_to_next=2 * len(indices) / 2 + 1,
+            offset_to_next=2 * len(indices) // 2 + 1,
             strip_count=1,
             indices=indices)
         index_list_terminator = IndexListNode(flags=0xff)
