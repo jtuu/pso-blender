@@ -58,7 +58,7 @@ class ExportRel(Operator, ExportHelper):
             return self.cancel_with_error(ex)
         (noext, ext) = os.path.splitext(self.filepath)
         if len(minimap_meshes) > 0:
-            r_rel.write(noext + "_r" + ext, minimap_meshes)
+            r_rel.write(noext + "r" + ext, minimap_meshes)
         return {'FINISHED'}
 
 

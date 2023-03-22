@@ -2,8 +2,8 @@ from dataclasses import dataclass, field
 from bpy.types import Mesh
 from .rel import Rel
 from .serialization import Serializable, Numeric
-from . import util, triangle_strip
-
+from . import util, trianglemesh
+from .trianglestripifier import TriangleStripifier
 
 U8 = Numeric.U8
 U16 = Numeric.U16
@@ -82,6 +82,22 @@ class Minimap(Serializable):
     unk2: U32 = 0
 
 
+def stripify(triangles):
+    # Convert to pyffi Mesh
+    mesh = trianglemesh.Mesh()
+    for face in triangles:
+        try:
+            mesh.add_face(*face)
+        except ValueError:
+            # degenerate face
+            pass
+    mesh.lock()
+
+    # Compute strips
+    stripifier = TriangleStripifier(mesh)
+    return stripifier.find_all_strips()
+
+
 def write(path: str, rooms: list[Mesh]):
     rel = Rel()
     minimap = Minimap()
@@ -92,7 +108,7 @@ def write(path: str, rooms: list[Mesh]):
 
         faces = util.mesh_faces(mesh)
         vertices = list(Vertex(x=v.co[0], y=v.co[1], z=v.co[2], nx=0.0, ny=1.0, nz=0.0) for v in mesh.vertices)
-        indices = triangle_strip.find_strip(faces)
+        strips = stripify(faces)
 
         container1 = VertexContainer1()
         container2 = VertexContainer2()
@@ -104,18 +120,24 @@ def write(path: str, rooms: list[Mesh]):
             vertices=vertices)
         vertex_list_terminator = VertexListNode(flags=0xff)
 
-        index_node = IndexListNode(
-            flags=0x0340,
-            offset_to_next=2 * len(indices) // 2 + 1,
-            strip_count=1,
-            indices=indices)
-        index_list_terminator = IndexListNode(flags=0xff)
+        # Write index list
+        index_node_ptr = None
+        for strip in strips:
+            index_node = IndexListNode(
+                flags=0x0340,
+                offset_to_next=2 * len(strip) // 2 + 1,
+                strip_count=1,
+                indices=strip)
+            ptr = rel.write(index_node)
+            if index_node_ptr is None:
+                index_node_ptr = ptr
 
+        index_list_terminator = IndexListNode(flags=0xff)
+        rel.write(index_list_terminator)
+
+        # Write the rest of the stuff
         vertex_node_ptr = rel.write(vertex_node)
         rel.write(vertex_list_terminator)
-
-        index_node_ptr = rel.write(index_node)
-        rel.write(index_list_terminator)
 
         container2.vertex_list = vertex_node_ptr
         container2.index_list = index_node_ptr
@@ -128,6 +150,7 @@ def write(path: str, rooms: list[Mesh]):
         room_ptr = rel.write(room)
         if first_room_ptr is None:
             first_room_ptr = room_ptr
+
     minimap.rooms = first_room_ptr
     minimap_ptr = rel.write(minimap)
     file_contents = rel.finish(minimap_ptr)
