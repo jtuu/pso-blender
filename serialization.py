@@ -89,28 +89,41 @@ class Serializable:
         fmt = Numeric.format_of_type(typehint_of_name(member, self))
         if fmt:
             return fmt
-        
         return None
 
-    def offset_of_member(self, member: str) -> int:
+    @classmethod
+    def offset_of_member(cls, member: str) -> int:
         # XXX: Only supports objects with primitive type members
         fmt_str = ""
-        for name in self.__dict__:
+        for name in cls.__annotations__:
             if name == member:
                 break
-            fmt = Numeric.format_of_type(typehint_of_name(name, self))
+            tp = cls.__annotations__[name]
+            fmt = Numeric.format_of_type(tp)
             if fmt:
                 fmt_str += fmt
         return Numeric.size_of_format(fmt_str)
     
-    def pointer_member_offsets(self) -> list[int]:
+    @classmethod
+    def pointer_member_offsets(cls) -> list[int]:
         # XXX: Only supports objects with primitive type members
         offsets = []
-        for name in self.__dict__:
-            tp = typehint_of_name(name, self)
+        for name in cls.__annotations__:
+            tp = cls.__annotations__[name]
             if tp == Numeric.Ptr16 or tp == Numeric.Ptr32:
-                offsets.append(self.offset_of_member(name))
+                offsets.append(cls.offset_of_member(name))
         return offsets
+    
+    @classmethod
+    def size(cls) -> int:
+        # XXX: Only supports objects with primitive type members
+        fmt_str = ""
+        for name in cls.__annotations__:
+            tp = cls.__annotations__[name]
+            fmt = Numeric.format_of_type(tp)
+            if fmt:
+                fmt_str += fmt
+        return Numeric.size_of_format(fmt)
     
     def _warn_unserializable(self, name):
         warn("Serializable class \"{}\" has unserializable member \"{}\"".format(type(self).__name__, name))
