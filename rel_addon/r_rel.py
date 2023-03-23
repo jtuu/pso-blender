@@ -12,7 +12,6 @@ I8 = Numeric.I8
 I16 = Numeric.I16
 I32 = Numeric.I32
 F32 = Numeric.F32
-Ptr16 = Numeric.Ptr16
 Ptr32 = Numeric.Ptr32
 
 
@@ -37,18 +36,27 @@ class VertexListNode(Serializable):
 
 
 @dataclass
+class IndexArray(Serializable):
+    length: U16 = 0
+    indices: list[U16] = field(default_factory=list)
+
+
+@dataclass
 class IndexListNode(Serializable):
     flags: U16 = 0
     # Offset to next IndexListNode, BUT divided by two
     offset_to_next: U16 = 0
     strip_count: U16 = 0
-    indices: list[U16] = field(default_factory=list)
+    indices: list[IndexArray] = field(default_factory=lambda: [IndexArray(length=0)])
 
 
 @dataclass
 class VertexContainer2(Serializable):
-    vertex_list: Ptr16 = 0
-    index_list: Ptr16 = 0
+    vertex_list: Ptr32 = 0
+    index_list: Ptr32 = 0
+    x: F32 = 0.0
+    y: F32 = 0.0
+    z: F32 = 0.0
 
 
 # Dunno what the point of this extra level of indirection is.
@@ -56,12 +64,12 @@ class VertexContainer2(Serializable):
 @dataclass
 class VertexContainer1(Serializable):
     unk1: U32 = 0
-    vertex_container2: Ptr16 = 0
+    vertex_container2: Ptr32 = 0
 
 
 @dataclass
 class Room(Serializable):
-    id: U32 = 0
+    id: U16 = 0
     flags: U16 = 0
     x: F32 = 0.0
     y: F32 = 0.0
@@ -71,12 +79,12 @@ class Room(Serializable):
     rot_z: I32 = 0
     color_alpha: F32 = 0.0
     discovery_radius: F32 = 0.0
-    vertex_container1: Ptr16 = 0
+    vertex_container1: Ptr32 = 0
 
 
 @dataclass
 class Minimap(Serializable):
-    rooms: Ptr16 = 0
+    rooms: Ptr32 = 0
     unk1: U32 = 0
     room_count: U32 = 0
     unk2: U32 = 0
@@ -98,16 +106,19 @@ def stripify(triangles):
     return stripifier.find_all_strips()
 
 
-def write(path: str, rooms: list[Mesh]):
+def write(path: str, room_meshes: list[Mesh]):
     rel = Rel()
     minimap = Minimap()
-    minimap.room_count = len(rooms)
-    first_room_ptr = None
-    for (i, mesh) in enumerate(rooms):
+    minimap.room_count = len(room_meshes)
+    rooms = []
+    for (i, mesh) in enumerate(room_meshes):
         room = Room(id=i, discovery_radius=1000.0, flags=1)
 
         faces = util.mesh_faces(mesh)
-        vertices = list(Vertex(x=v.co[0], y=v.co[1], z=v.co[2], nx=0.0, ny=1.0, nz=0.0) for v in mesh.vertices)
+        vertices = []
+        for v in mesh.vertices:
+            # Swap y and z because blender has them swapped
+            vertices.append(Vertex(x=v.co[0], y=v.co[2], z=v.co[1], nx=0.0, ny=1.0, nz=0.0))
         strips = stripify(faces)
 
         container1 = VertexContainer1()
@@ -118,26 +129,35 @@ def write(path: str, rooms: list[Mesh]):
             offset_to_next=Vertex.size() * len(vertices) // 4 + 1,
             vertex_count=len(vertices),
             vertices=vertices)
-        vertex_list_terminator = VertexListNode(flags=0xff)
-
-        # Write index list
-        index_node_ptr = None
-        for strip in strips:
-            index_node = IndexListNode(
-                flags=0x0340,
-                offset_to_next=2 * len(strip) // 2 + 1,
-                strip_count=1,
-                indices=strip)
-            ptr = rel.write(index_node)
-            if index_node_ptr is None:
-                index_node_ptr = ptr
-
-        index_list_terminator = IndexListNode(flags=0xff)
-        rel.write(index_list_terminator)
-
-        # Write the rest of the stuff
         vertex_node_ptr = rel.write(vertex_node)
-        rel.write(vertex_list_terminator)
+        rel.write(VertexListNode(flags=0xff)) # Terminator
+
+        # Indices
+        indices = []
+        indices_size = 0
+        for strip in strips:
+            indices.append(IndexArray(length=len(strip), indices=strip))
+            indices_size += 2
+            indices_size += len(strip) * 2
+
+        index_node = IndexListNode(
+                flags=0x0340,
+                offset_to_next=indices_size // 2 + 1,
+                strip_count=len(strips),
+                indices=indices)
+    
+        # Due to variable amount of 16bit values we need to ensure alignment
+        padding = None
+        if (rel.buf.offset + IndexListNode.size() + indices_size) % 4 != 0:
+            index_node.offset_to_next += 1
+            padding = "<H"
+
+        index_node_ptr = rel.write(index_node)
+
+        if padding:
+            rel.buf.pack(padding, 0)
+
+        rel.write(IndexListNode(flags=0xff)) # Terminator
 
         container2.vertex_list = vertex_node_ptr
         container2.index_list = index_node_ptr
@@ -147,10 +167,13 @@ def write(path: str, rooms: list[Mesh]):
         container1_ptr = rel.write(container1)
 
         room.vertex_container1 = container1_ptr
+        rooms.append(room)
+    # Write rooms
+    first_room_ptr = None
+    for room in rooms:
         room_ptr = rel.write(room)
         if first_room_ptr is None:
             first_room_ptr = room_ptr
-
     minimap.rooms = first_room_ptr
     minimap_ptr = rel.write(minimap)
     file_contents = rel.finish(minimap_ptr)

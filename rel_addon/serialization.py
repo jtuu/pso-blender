@@ -123,7 +123,7 @@ class Serializable:
             fmt = Numeric.format_of_type(tp)
             if fmt:
                 fmt_str += fmt
-        return Numeric.size_of_format(fmt)
+        return Numeric.size_of_format(fmt_str)
     
     def _warn_unserializable(self, name):
         warn("Serializable class \"{}\" has unserializable member \"{}\"".format(type(self).__name__, name))
@@ -186,5 +186,5 @@ class Serializable:
             # Save offset of first write
             if first_write_offset is None:
                 first_write_offset = offset
-        return offset
+        return first_write_offset
             
