@@ -2,8 +2,8 @@ from dataclasses import dataclass, field
 from bpy.types import Mesh
 from .rel import Rel
 from .serialization import Serializable, Numeric
-from . import util, trianglemesh
-from .trianglestripifier import TriangleStripifier
+from . import util
+
 
 U8 = Numeric.U8
 U16 = Numeric.U16
@@ -90,22 +90,6 @@ class Minimap(Serializable):
     unk2: U32 = 0
 
 
-def stripify(triangles):
-    # Convert to pyffi Mesh
-    mesh = trianglemesh.Mesh()
-    for face in triangles:
-        try:
-            mesh.add_face(*face)
-        except ValueError:
-            # degenerate face
-            pass
-    mesh.lock()
-
-    # Compute strips
-    stripifier = TriangleStripifier(mesh)
-    return stripifier.find_all_strips()
-
-
 def write(path: str, room_meshes: list[Mesh]):
     rel = Rel()
     minimap = Minimap()
@@ -119,7 +103,7 @@ def write(path: str, room_meshes: list[Mesh]):
         for v in mesh.vertices:
             # Swap y and z because blender has them swapped
             vertices.append(Vertex(x=v.co[0], y=v.co[2], z=v.co[1], nx=0.0, ny=1.0, nz=0.0))
-        strips = stripify(faces)
+        strips = util.stripify(faces)
 
         container1 = VertexContainer1()
         container2 = VertexContainer2()
