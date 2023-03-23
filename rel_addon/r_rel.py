@@ -129,7 +129,7 @@ def write(path: str, room_meshes: list[Mesh]):
                 offset_to_next=indices_size // 2 + 1,
                 strip_count=len(strips),
                 indices=indices)
-    
+
         # Due to variable amount of 16bit values we need to ensure alignment
         padding = None
         if (rel.buf.offset + IndexListNode.size() + indices_size) % 4 != 0:
@@ -163,4 +163,3 @@ def write(path: str, room_meshes: list[Mesh]):
     file_contents = rel.finish(minimap_ptr)
     with open(path, "wb") as f:
         f.write(file_contents)
-

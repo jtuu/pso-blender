@@ -1,7 +1,6 @@
-from dataclasses import dataclass
-from struct import pack_into, unpack_from
+from struct import pack_into
 from warnings import warn
-from .serialization import Serializable, Numeric, ResizableBuffer
+from .serialization import Serializable, ResizableBuffer
 
 
 class Rel:

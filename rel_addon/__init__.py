@@ -1,7 +1,7 @@
 import os
 import bpy
 from bpy_extras.io_utils import ExportHelper
-from bpy.props import StringProperty, BoolProperty, EnumProperty
+from bpy.props import StringProperty
 from bpy.types import Operator, Mesh
 from . import r_rel
 
@@ -38,12 +38,13 @@ class ExportRel(Operator, ExportHelper):
     filename_ext = ".rel"
 
     filter_glob: StringProperty(
-        default="*.rel",
-        options={'HIDDEN'},
+        # Suppress flake8 false errors
+        default="*.rel", # noqa: F722
+        options={"HIDDEN"}, # noqa: F821
         maxlen=255,  # Max internal buffer length, longer would be clamped.
     )
 
-    filepath: StringProperty(subtype="FILE_PATH")
+    filepath: StringProperty(subtype="FILE_PATH") # noqa: F821
 
     def cancel_with_error(self, ex: Exception()):
         self.report({"ERROR"}, str(ex))

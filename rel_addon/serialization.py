@@ -1,7 +1,7 @@
 import sys
 from dataclasses import dataclass
 from typing import NewType, get_type_hints, get_args
-from struct import pack, pack_into
+from struct import pack_into
 from warnings import warn
 
 

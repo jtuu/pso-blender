@@ -1,0 +1,19 @@
+[flake8]
+extend-ignore =
+    # Indentation
+    E1
+    W1
+    # Whitespace
+    E2
+    W2
+    # Blank lines
+    E3
+    W3
+    # Imports
+    E4
+    W4
+    # Line length
+    E5
+    W5
+    # No lambdas
+    E731
