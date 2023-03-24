@@ -4,20 +4,22 @@ from .serialization import Serializable, ResizableBuffer
 
 
 class Rel:
+    ALIGNMENT = 4
+
     def __init__(self):
         self.buf: ResizableBuffer = ResizableBuffer(0)
         self.pointer_offsets: list[int] = []
         self.warned_misalignment = False
 
-    def write(self, item: Serializable) -> int:
-        item_offset = item.serialize_into(self.buf)
-        if not self.warned_misalignment and self.buf.offset % 4 != 0:
+    def write(self, item: Serializable, ensure_aligned=False) -> int:
+        item_offset = item.serialize_into(self.buf, Rel.ALIGNMENT if ensure_aligned else None)
+        if not self.warned_misalignment and self.buf.offset % Rel.ALIGNMENT != 0:
             self.warned_misalignment = True
             warn("REL warning: Potential misalignment after writing \"{}\"".format(type(item).__name__))
         # Remember where pointers are written
-        for member_offset in item.pointer_member_offsets():
+        for member_offset in item.instance_pointer_member_offsets():
             ptr_offset = item_offset + member_offset
-            if ptr_offset % 4 != 0:
+            if ptr_offset % Rel.ALIGNMENT != 0:
                 raise Exception("REL error: Misaligned pointer in \"{}\" ({} + {})".format(type(item).__name__, item_offset, member_offset))
             self.pointer_offsets.append(ptr_offset)
         return item_offset
