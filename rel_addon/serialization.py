@@ -1,8 +1,9 @@
 import sys
-from dataclasses import dataclass
-from typing import NewType, get_type_hints, get_args
+from dataclasses import dataclass, field
+from typing import NewType, get_type_hints, get_args, get_origin
 from struct import pack_into
 from warnings import warn
+from operator import itemgetter
 
 
 def typehint_of_name(name: str, ns=sys.modules[__name__]):
@@ -21,7 +22,6 @@ class Numeric:
         "I16": (int, "<h"),
         "I32": (int, "<l"),
         "F32": (float, "<f"),
-        "Ptr16": (int, "<H"),
         "Ptr32": (int, "<L")
     }
 
@@ -85,69 +85,103 @@ class Serializable:
     def __init__(self):
         pass
 
-    def format_of_member(self, member: str) -> str:
-        fmt = Numeric.format_of_type(typehint_of_name(member, self))
+    @classmethod
+    def format_of_member(cls, member: str) -> str:
+        fmt = Numeric.format_of_type(typehint_of_name(member, cls))
         if fmt:
             return fmt
         return None
+    
+    @staticmethod
+    def _offset_visitor(**kwargs) -> bool:
+        (fmt, ctx, name, tp) = itemgetter("fmt", "ctx", "name", "tp")(kwargs)
+        if tp is not None and tp == ctx.get("type_needle"):
+            ctx["offsets"].append(ctx["size_sum"])
+        if name is not None and name == ctx.get("name_needle"):
+            return False
+        if fmt:
+            ctx["size_sum"] += Numeric.size_of_format(fmt)
+        return True
 
     @classmethod
-    def offset_of_member(cls, member: str) -> int:
-        # XXX: Only supports objects with primitive type members
-        fmt_str = ""
-        for name in cls.__annotations__:
-            if name == member:
-                break
-            tp = cls.__annotations__[name]
-            fmt = Numeric.format_of_type(tp)
-            if fmt:
-                fmt_str += fmt
-        return Numeric.size_of_format(fmt_str)
+    def type_offset_of_member(cls, member: str) -> int:
+        ctx = {"name_needle": member, "size_sum": 0}
+        cls._visit(cls, ctx, Serializable._offset_visitor)
+        return ctx["size_sum"]
+    
+    def instance_offset_of_member(self, member: str) -> int:
+        ctx = {"name_needle": member, "size_sum": 0}
+        self._visit(self, ctx, Serializable._offset_visitor)
+        return ctx["size_sum"]
     
     @classmethod
-    def pointer_member_offsets(cls) -> list[int]:
-        # XXX: Only supports objects with primitive type members
-        offsets = []
-        for name in cls.__annotations__:
-            tp = cls.__annotations__[name]
-            if tp == Numeric.Ptr16 or tp == Numeric.Ptr32:
-                offsets.append(cls.offset_of_member(name))
-        return offsets
+    def type_pointer_member_offsets(cls) -> list[int]:
+        ctx = {"type_needle": Numeric.Ptr32, "size_sum": 0, "offsets": []}
+        cls._visit(cls, ctx, Serializable._offset_visitor)
+        return ctx["offsets"]
+    
+    def instance_pointer_member_offsets(self) -> list[int]:
+        ctx = {"type_needle": Numeric.Ptr32, "size_sum": 0, "offsets": []}
+        self._visit(self, ctx, Serializable._offset_visitor)
+        return ctx["offsets"]
+    
+    @staticmethod
+    def _size_visitor(**kwargs) -> bool:
+        (fmt, ctx) = itemgetter("fmt", "ctx")(kwargs)
+        if fmt:
+            ctx["size_sum"] += Numeric.size_of_format(fmt)
+        return True
+
+    def instance_size(self) -> int:
+        """Will also include size of data inside any list type members."""
+        ctx = {"size_sum": 0}
+        self._visit(self, ctx, Serializable._size_visitor)
+        return ctx["size_sum"]
+
+    @classmethod
+    def type_size(cls) -> int:
+        """Similar to sizeof(). Size of lists is considered to be 0."""
+        ctx = {"size_sum": 0}
+        cls._visit(cls, ctx, Serializable._size_visitor)
+        return ctx["size_sum"]
     
     @classmethod
-    def size(cls) -> int:
-        # XXX: Only supports objects with primitive type members
-        fmt_str = ""
-        for name in cls.__annotations__:
-            tp = cls.__annotations__[name]
-            fmt = Numeric.format_of_type(tp)
-            if fmt:
-                fmt_str += fmt
-        return Numeric.size_of_format(fmt_str)
+    def _warn_unserializable(cls, name):
+        warn("Serializable class \"{}\" has unserializable member \"{}\"".format(cls.__name__, name), stacklevel=2)
     
-    def _warn_unserializable(self, name):
-        warn("Serializable class \"{}\" has unserializable member \"{}\"".format(type(self).__name__, name))
-
-    def _visit(self, buf: ResizableBuffer, value, name, tp) -> int:
-        if isinstance(value, Serializable):
-            # Serialize object
-            return value.serialize_into(buf)
-
+    @classmethod
+    def _visit(cls, value, ctx: dict, visitor, *args, name=None, tp=None) -> bool:
+        is_instance = isinstance(value, Serializable)
+        is_class = type(value) is type and issubclass(value, Serializable)
+        if is_instance or is_class:
+            should_continue = True
+            members = value.__annotations__ if is_class else value.__dict__
+            for member_name in members:
+                member_value = members[member_name]
+                member_type = None
+                if is_instance:
+                    member_type = typehint_of_name(member_name, value)
+                elif is_class:
+                    member_type = member_value
+                should_continue = value._visit(member_value, ctx, visitor, name=member_name, tp=member_type)
+                if not should_continue:
+                    break
+            return should_continue
         is_list = type(value) is list
         is_tuple = type(value) is tuple
         if is_list or is_tuple:
             container_type = None
             # Need to get typehint to get the element type
             if name is not None:
-                container_type = typehint_of_name(name, self)
+                container_type = typehint_of_name(name, cls)
             elif tp is not None:
                 container_type = tp
             elem_types = get_args(container_type)
             if len(elem_types) < 1:
                 # Can't continue
-                self._warn_unserializable(name)
+                cls._warn_unserializable(name)
                 return None
-            first_write_offset = None
+            should_continue = True
             for i in range(len(value)):
                 # Get type of current element
                 # Lists have one element type, tuples have n
@@ -156,35 +190,50 @@ class Serializable:
                     type_idx = i
                 elem_type = elem_types[type_idx]
                 # Visit element
-                offset = self._visit(buf, value[i], None, elem_type)
-                # Save offset of first write
-                if first_write_offset is None:
-                    first_write_offset = offset
-            return first_write_offset
-
-        # Value is primitive
-        # Determine format from name or type
+                should_continue = cls._visit(value[i], ctx, visitor, tp=elem_type)
+                if not should_continue:
+                    break
+            return should_continue
+        
         fmt = None
-        if name is not None:
-            fmt = self.format_of_member(name)
-        elif tp is not None:
-            fmt = Numeric.format_of_type(tp)
-        if fmt is None:
-            # Can't continue
-            self._warn_unserializable(name)
-            return None
-        return buf.pack(fmt, value)
+        if get_origin(value) is not list and get_origin(value) is not tuple:
+            # Value is primitive
+            # Determine format from name or type
+            if name is not None:
+                fmt = cls.format_of_member(name)
+            elif tp is not None:
+                fmt = Numeric.format_of_type(tp)
+            if fmt is None:
+                # Can't continue
+                cls._warn_unserializable(name)
+                return None
+        # Call visitor on value
+        return visitor(value=value, name=name, tp=tp, fmt=fmt, ctx=ctx)
+    
+    @staticmethod
+    def _serializer_visitor(**kwargs) -> bool:
+        (value, ctx, fmt) = itemgetter("value", "ctx", "fmt")(kwargs)
+        if fmt:
+            offset = ctx["buf"].pack(fmt, value)
+            if ctx["first_offset"] is None:
+                ctx["first_offset"] = offset
+        return True
 
-    def serialize_into(self, buf: ResizableBuffer) -> int:
+    def serialize_into(self, buf: ResizableBuffer, alignment=None) -> int:
         """Writes serializable members of this object into given buffer.
         Returns absolute offset of where data was written."""
-        first_write_offset = None
-        # Visit members
-        for name in self.__dict__:
-            value = self.__dict__[name]
-            offset = self._visit(buf, value, name, None)
-            # Save offset of first write
-            if first_write_offset is None:
-                first_write_offset = offset
-        return first_write_offset
-            
+        item = self
+        if alignment is not None:
+            offset_after = buf.offset + self.instance_size()
+            if offset_after % alignment != 0:
+                padding = ((offset_after // alignment) + 1) * alignment - offset_after
+                item = AlignmentHelper(wrapped=self, padding=[0] * padding)
+        ctx = {"first_offset": None, "buf": buf}
+        self._visit(item, ctx, Serializable._serializer_visitor)
+        return ctx["first_offset"]
+
+
+@dataclass
+class AlignmentHelper(Serializable):
+    wrapped: Serializable
+    padding: list[Numeric.U8] = field(default_factory=list)
