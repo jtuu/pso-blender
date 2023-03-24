@@ -129,10 +129,10 @@ def write(path: str, meshes: list[bpy.types.Mesh]):
     chunk = Chunk(
         flags=0x00010000,
         static_mesh_tree_count=len(meshes))
-    static_mesh_tree = MeshTree(flags=0x00220000)
-    prev_mesh_node_ptr = None
+    static_mesh_trees = []
     # Build mesh tree
     for blender_mesh in meshes:
+        static_mesh_tree = MeshTree(flags=0x00220000)
         mesh_node = MeshTreeNode(flags=0x17, scale_x=1.0, scale_y=1.0, scale_z=1.0)
         faces = util.mesh_faces(blender_mesh)
         strips = util.stripify(faces)
@@ -141,11 +141,15 @@ def write(path: str, meshes: list[bpy.types.Mesh]):
 
         # Vertices. Only one buffer needed.
         vertex_buffer = VertexBufferFormat4()
-        for v in blender_mesh.vertices:
+        for (i, v) in enumerate(blender_mesh.vertices):
+            # Add some color to make it easier to see
+            r = (i + 10) % 0x7f
+            g = (i + 20) % 0x7f
+            b = (i + 30) % 0x7f
             # Swap y and z
             vertex_buffer.vertices.append(VertexFormat4(
                 x=v.co[0], y=v.co[2], z=v.co[1],
-                r=0x7f, g=0x7f, b=0x7f, a=0xff))
+                r=r, g=g, b=b, a=0xff))
         mesh.vertex_buffers = rel.write(VertexBufferContainer(
             vertex_format=4,
             vertex_buffer=rel.write(vertex_buffer),
@@ -156,7 +160,6 @@ def write(path: str, meshes: list[bpy.types.Mesh]):
         index_buffer_containers = []
         for strip in strips:
             buf_ptr = rel.write(IndexBuffer(indices=strip), True)
-            
             index_buffer_containers.append(IndexBufferContainer(
                 index_buffer=buf_ptr,
                 index_count=len(strip)))
@@ -170,14 +173,15 @@ def write(path: str, meshes: list[bpy.types.Mesh]):
         mesh.index_buffers = first_index_buffer_container_ptr
 
         mesh_node.mesh = rel.write(mesh)
+        static_mesh_tree.root_node = rel.write(mesh_node)
+        static_mesh_trees.append(static_mesh_tree)
 
-        # Link nodes (backwards)
-        if prev_mesh_node_ptr is not None:
-            mesh_node.next = prev_mesh_node_ptr
-        prev_mesh_node_ptr = rel.write(mesh_node)
-
-    static_mesh_tree.root_node = prev_mesh_node_ptr
-    chunk.static_mesh_trees = rel.write(static_mesh_tree)
+    first_static_mesh_tree_ptr = None
+    for tree in static_mesh_trees:
+        ptr = rel.write(tree)
+        if first_static_mesh_tree_ptr is None:
+            first_static_mesh_tree_ptr = ptr
+    chunk.static_mesh_trees = first_static_mesh_tree_ptr
     nrel.chunks = rel.write(chunk)
     file_contents = rel.finish(rel.write(nrel))
     with open(path, "wb") as f:
