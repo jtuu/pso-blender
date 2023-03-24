@@ -3,7 +3,7 @@ import bpy
 from bpy_extras.io_utils import ExportHelper
 from bpy.props import StringProperty
 from bpy.types import Operator, Mesh
-from . import r_rel
+from . import r_rel, n_rel
 
 
 bl_info = {
@@ -60,6 +60,8 @@ class ExportRel(Operator, ExportHelper):
         (noext, ext) = os.path.splitext(self.filepath)
         if len(minimap_meshes) > 0:
             r_rel.write(noext + "r" + ext, minimap_meshes)
+        if len(render_meshes) > 0:
+            n_rel.write(noext + "n" + ext, render_meshes)
         return {'FINISHED'}
 
 
