@@ -110,7 +110,7 @@ def write(path: str, room_meshes: list[Mesh]):
 
         vertex_node = VertexListNode(
             flags=0x29,
-            offset_to_next=Vertex.size() * len(vertices) // 4 + 1,
+            offset_to_next=Vertex.type_size() * len(vertices) // 4 + 1,
             vertex_count=len(vertices),
             vertices=vertices)
         vertex_node_ptr = rel.write(vertex_node)
@@ -132,7 +132,7 @@ def write(path: str, room_meshes: list[Mesh]):
 
         # Due to variable amount of 16bit values we need to ensure alignment
         padding = None
-        if (rel.buf.offset + IndexListNode.size() + indices_size) % 4 != 0:
+        if (rel.buf.offset + IndexListNode.type_size() + indices_size) % 4 != 0:
             index_node.offset_to_next += 1
             padding = "<H"
 
