@@ -3,7 +3,7 @@ import bpy
 from bpy_extras.io_utils import ExportHelper
 from bpy.props import StringProperty
 from bpy.types import Operator, Mesh
-from . import r_rel, n_rel
+from . import r_rel, n_rel, c_rel
 
 
 bl_info = {
@@ -62,6 +62,8 @@ class ExportRel(Operator, ExportHelper):
             r_rel.write(noext + "r" + ext, minimap_meshes)
         if len(render_meshes) > 0:
             n_rel.write(noext + "n" + ext, render_meshes)
+        if len(collision_meshes):
+            c_rel.write(noext + "c" + ext, collision_meshes)
         return {'FINISHED'}
 
 
