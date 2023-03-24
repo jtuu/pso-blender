@@ -1,5 +1,5 @@
 from dataclasses import dataclass, field
-from bpy.types import Mesh
+import bpy.types
 from .rel import Rel
 from .serialization import Serializable, Numeric
 from . import util
@@ -91,19 +91,23 @@ class Minimap(Serializable):
     unk2: U32 = 0
 
 
-def write(path: str, room_meshes: list[Mesh]):
+def write(path: str, room_objects: list[bpy.types.Object]):
     rel = Rel()
     minimap = Minimap()
-    minimap.room_count = len(room_meshes)
+    minimap.room_count = len(room_objects)
     rooms = []
-    for (i, mesh) in enumerate(room_meshes):
+    for (i, obj) in enumerate(room_objects):
+        mesh = obj.to_mesh()
         room = Room(id=i, discovery_radius=1000.0, flags=1)
 
         faces = util.mesh_faces(mesh)
         vertices = []
-        for v in mesh.vertices:
+        for local_vert in mesh.vertices:
+            world_vert = obj.matrix_world @ local_vert.co
             # Swap y and z because blender has them swapped
-            vertices.append(Vertex(x=v.co[0], y=v.co[2], z=v.co[1], nx=0.0, ny=1.0, nz=0.0))
+            vertices.append(Vertex(
+                x=world_vert[0], y=world_vert[2], z=world_vert[1],
+                nx=0.0, ny=1.0, nz=0.0))
         strips = util.stripify(faces)
 
         container1 = VertexContainer1()

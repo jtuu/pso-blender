@@ -14,5 +14,3 @@ To specify which output file a mesh should be exported to, custom **Object Data 
 
 The values of these properties are currently not used.
 Meshes can have multiple tags which will cause them to be exported into each of the specified files.
-
-Note that object transforms are currently not applied, only vertex transforms will apply.

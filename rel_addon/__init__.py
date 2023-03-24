@@ -2,7 +2,7 @@ import os
 import bpy
 from bpy_extras.io_utils import ExportHelper
 from bpy.props import StringProperty
-from bpy.types import Operator, Mesh
+from bpy.types import Operator, Object
 from . import r_rel, n_rel, c_rel
 
 
@@ -13,20 +13,20 @@ bl_info = {
 }
 
 
-def filter_meshes_by_props(props: list[str]) -> list[Mesh]:
-    """Throws if a mesh has at least one prop but not all props"""
-    meshes = []
-    for mesh in bpy.data.meshes:
-        has = list(prop for prop in props if prop in mesh)
+def filter_objects_by_props(props: list[str]) -> list[Object]:
+    """Throws if an object has at least one prop but not all props"""
+    objects = []
+    for obj in bpy.data.objects:
+        has = list(prop for prop in props if prop in obj)
         if len(has) > 0:
-            hasnt = list(prop for prop in props if prop not in mesh)
+            hasnt = list(prop for prop in props if prop not in obj)
             if len(hasnt) > 0:
                 raise Exception((
                     "Mesh \"{}\" is missing the following properties: {}, "
                     "which are required because it has the following properties: {}")
-                        .format(mesh.name, hasnt, has))
-            meshes.append(mesh)
-    return meshes
+                        .format(obj.name, hasnt, has))
+            objects.append(obj)
+    return objects
 
 
 class ExportRel(Operator, ExportHelper):
@@ -52,18 +52,18 @@ class ExportRel(Operator, ExportHelper):
 
     def execute(self, context):
         try:
-            minimap_meshes = filter_meshes_by_props(["pso_minimap_radius"])
-            render_meshes = filter_meshes_by_props(["pso_render_flags"])
-            collision_meshes = filter_meshes_by_props(["pso_collision_flags"])
+            minimap_objs = filter_objects_by_props(["pso_minimap_radius"])
+            render_objs = filter_objects_by_props(["pso_render_flags"])
+            collision_objs = filter_objects_by_props(["pso_collision_flags"])
         except Exception as ex:
             return self.cancel_with_error(ex)
         (noext, ext) = os.path.splitext(self.filepath)
-        if len(minimap_meshes) > 0:
-            r_rel.write(noext + "r" + ext, minimap_meshes)
-        if len(render_meshes) > 0:
-            n_rel.write(noext + "n" + ext, render_meshes)
-        if len(collision_meshes):
-            c_rel.write(noext + "c" + ext, collision_meshes)
+        if len(minimap_objs) > 0:
+            r_rel.write(noext + "r" + ext, minimap_objs)
+        if len(render_objs) > 0:
+            n_rel.write(noext + "n" + ext, render_objs)
+        if len(collision_objs):
+            c_rel.write(noext + "c" + ext, collision_objs)
         return {'FINISHED'}
 
 

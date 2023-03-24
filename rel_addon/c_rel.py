@@ -66,16 +66,19 @@ class Crel(Serializable):
     nodes: Ptr32 = NULLPTR
 
 
-def write(path: str, meshes: list[bpy.types.Mesh]):
+def write(path: str, objects: list[bpy.types.Object]):
     rel = Rel()
     nodes = []
-    for blender_mesh in meshes:
+    for obj in objects:
+        blender_mesh = obj.to_mesh()
         node = CrelNode(flags=0x00000921, radius=300.0)
 
         vertex_array = VertexArray()
-        for v in blender_mesh.vertices:
+        for local_vert in blender_mesh.vertices:
+            world_vert = obj.matrix_world @ local_vert.co
             # Swap y and z
-            vertex_array.vertices.append(Vertex(x=v.co[0], y=v.co[2], z=v.co[1]))
+            vertex_array.vertices.append(Vertex(
+                x=world_vert[0], y=world_vert[2], z=world_vert[1]))
 
         faces = util.mesh_faces(blender_mesh)
         mesh = Mesh(vertices=rel.write(vertex_array), face_count=len(faces))

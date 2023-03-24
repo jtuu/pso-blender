@@ -121,17 +121,18 @@ class NrelFmt2(Serializable):
     njtl: Ptr32 = NULLPTR
 
 
-def write(path: str, meshes: list[bpy.types.Mesh]):
+def write(path: str, objects: list[bpy.types.Object]):
     rel = Rel()
     nrel = NrelFmt2()
     # Put all meshes in one chunk because I don't know how chunks are supposed to work exactly
     nrel.chunk_count = 1
     chunk = Chunk(
         flags=0x00010000,
-        static_mesh_tree_count=len(meshes))
+        static_mesh_tree_count=len(objects))
     static_mesh_trees = []
     # Build mesh tree
-    for blender_mesh in meshes:
+    for obj in objects:
+        blender_mesh = obj.to_mesh()
         static_mesh_tree = MeshTree(flags=0x00220000)
         mesh_node = MeshTreeNode(flags=0x17, scale_x=1.0, scale_y=1.0, scale_z=1.0)
         faces = util.mesh_faces(blender_mesh)
@@ -141,14 +142,15 @@ def write(path: str, meshes: list[bpy.types.Mesh]):
 
         # Vertices. Only one buffer needed.
         vertex_buffer = VertexBufferFormat4()
-        for (i, v) in enumerate(blender_mesh.vertices):
+        for (i, local_vert) in enumerate(blender_mesh.vertices):
+            world_vert = obj.matrix_world @ local_vert.co
             # Add some color to make it easier to see
             r = (i + 10) % 0x7f
             g = (i + 20) % 0x7f
             b = (i + 30) % 0x7f
             # Swap y and z
             vertex_buffer.vertices.append(VertexFormat4(
-                x=v.co[0], y=v.co[2], z=v.co[1],
+                x=world_vert[0], y=world_vert[2], z=world_vert[1],
                 r=r, g=g, b=b, a=0xff))
         mesh.vertex_buffers = rel.write(VertexBufferContainer(
             vertex_format=4,
