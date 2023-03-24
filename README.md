@@ -7,10 +7,10 @@ A Blender plugin that can export the following file formats for Phantasy Star On
 
 Exporting a file with the name `foo.rel` will write three files named `foon.rel`, `fooc.rel`, and `foor.rel`.
 
-To specify which output file a mesh should be exported to, custom **Object Data Properties** are used to tag meshes.
-* `pso_render_flags`: n.rel
-* `pso_collision_flags`: c.rel
-* `pso_minimap_radius`: r.rel
+To specify which output file a mesh should be exported to, custom **Object Properties** are used to tag meshes.
+* `nrel`: n.rel
+* `crel`: c.rel
+* `rrel`: r.rel
 
-The values of these properties are currently not used.
+The values of these properties are not used.
 Meshes can have multiple tags which will cause them to be exported into each of the specified files.

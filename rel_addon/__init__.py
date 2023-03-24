@@ -52,9 +52,9 @@ class ExportRel(Operator, ExportHelper):
 
     def execute(self, context):
         try:
-            minimap_objs = filter_objects_by_props(["pso_minimap_radius"])
-            render_objs = filter_objects_by_props(["pso_render_flags"])
-            collision_objs = filter_objects_by_props(["pso_collision_flags"])
+            minimap_objs = filter_objects_by_props(["rrel"])
+            render_objs = filter_objects_by_props(["nrel"])
+            collision_objs = filter_objects_by_props(["crel"])
         except Exception as ex:
             return self.cancel_with_error(ex)
         (noext, ext) = os.path.splitext(self.filepath)
