@@ -10,6 +10,9 @@ class Rel:
         self.buf: ResizableBuffer = ResizableBuffer(0)
         self.pointer_offsets: list[int] = []
         self.warned_misalignment = False
+        # Consume the 0th offset to ensure that no userdata can have pointers that point to 0
+        # because we use 0 as nullptr even though technically it would be a valid offset
+        self.buf.pack("<L", 0)
 
     def write(self, item: Serializable, ensure_aligned=False) -> int:
         item_offset = item.serialize_into(self.buf, Rel.ALIGNMENT if ensure_aligned else None)
@@ -17,7 +20,7 @@ class Rel:
             self.warned_misalignment = True
             warn("REL warning: Potential misalignment after writing \"{}\"".format(type(item).__name__))
         # Remember where pointers are written
-        for member_offset in item.instance_pointer_member_offsets():
+        for member_offset in item.nonnull_pointer_member_offsets():
             ptr_offset = item_offset + member_offset
             if ptr_offset % Rel.ALIGNMENT != 0:
                 raise Exception("REL error: Misaligned pointer in \"{}\" ({} + {})".format(type(item).__name__, item_offset, member_offset))

@@ -13,6 +13,7 @@ I16 = Numeric.I16
 I32 = Numeric.I32
 F32 = Numeric.F32
 Ptr32 = Numeric.Ptr32
+NULLPTR = Numeric.NULLPTR
 
 
 @dataclass
@@ -52,8 +53,8 @@ class IndexListNode(Serializable):
 
 @dataclass
 class VertexContainer2(Serializable):
-    vertex_list: Ptr32 = 0
-    index_list: Ptr32 = 0
+    vertex_list: Ptr32 = NULLPTR
+    index_list: Ptr32 = NULLPTR
     x: F32 = 0.0
     y: F32 = 0.0
     z: F32 = 0.0
@@ -64,7 +65,7 @@ class VertexContainer2(Serializable):
 @dataclass
 class VertexContainer1(Serializable):
     unk1: U32 = 0
-    vertex_container2: Ptr32 = 0
+    vertex_container2: Ptr32 = NULLPTR
 
 
 @dataclass
@@ -79,12 +80,12 @@ class Room(Serializable):
     rot_z: I32 = 0
     color_alpha: F32 = 0.0
     discovery_radius: F32 = 0.0
-    vertex_container1: Ptr32 = 0
+    vertex_container1: Ptr32 = NULLPTR
 
 
 @dataclass
 class Minimap(Serializable):
-    rooms: Ptr32 = 0
+    rooms: Ptr32 = NULLPTR
     unk1: U32 = 0
     room_count: U32 = 0
     unk2: U32 = 0

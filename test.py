@@ -11,7 +11,7 @@ I16 = Numeric.I16
 I32 = Numeric.I32
 F32 = Numeric.F32
 Ptr32 = Numeric.Ptr32
-
+NULLPTR = Numeric.NULLPTR
 
 @dataclass
 class MyBasicStruct(Serializable):
@@ -37,8 +37,8 @@ class MyUnalignedStruct(Serializable):
 class MyPointingStruct(Serializable):
     data_count: U32 = 0
     data: list[U8] = field(default_factory=list)
-    child: Ptr32 = 0
-    sibling: Ptr32 = 0
+    child: Ptr32 = NULLPTR
+    sibling: Ptr32 = NULLPTR
 
 
 class TestSerialization(unittest.TestCase):
@@ -74,14 +74,11 @@ class TestSerialization(unittest.TestCase):
         item = MyUnalignedStruct()
         item.serialize_into(buf, 4)
         self.assertEqual(buf.offset, 8)
-    
-    def test_struct_type_pointer_member_offsets(self):
-        self.assertEqual(MyPointingStruct.type_pointer_member_offsets(), [4, 8])
 
-    def test_struct_instance_pointer_member_offsets(self):
+    def test_struct_nonnull_pointer_member_offsets(self):
         data = [1, 2, 3]
-        item = MyPointingStruct(data_count=len(data), data=data)
-        self.assertEqual(item.instance_pointer_member_offsets(), [7, 11])
+        item = MyPointingStruct(data_count=len(data), data=data, sibling=1337)
+        self.assertEqual(item.nonnull_pointer_member_offsets(), [11])
 
 
 if __name__ == '__main__':

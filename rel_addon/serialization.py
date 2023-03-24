@@ -13,6 +13,8 @@ def typehint_of_name(name: str, ns=sys.modules[__name__]):
 @dataclass
 class Numeric:
     """Contains numeric types"""
+    NULLPTR = 0
+
     type_info = {
         # newtype name: python type, structlib format
         "U8": (int, "<B"),
@@ -52,9 +54,11 @@ class Numeric:
 
 
 # Create NewTypes and store them in Numeric class
-for name in Numeric.type_info:
-    (tp, fmt) = Numeric.type_info[name]
-    setattr(Numeric, name, NewType(name, tp))
+def generate_numeric_types():
+    for name in Numeric.type_info:
+        (tp, fmt) = Numeric.type_info[name]
+        setattr(Numeric, name, NewType(name, tp))
+generate_numeric_types()
 
 
 class ResizableBuffer:
@@ -94,37 +98,21 @@ class Serializable:
     
     @staticmethod
     def _offset_visitor(**kwargs) -> bool:
-        (fmt, ctx, name, tp) = itemgetter("fmt", "ctx", "name", "tp")(kwargs)
-        if tp is not None and tp == ctx.get("type_needle"):
+        (fmt, ctx) = itemgetter("fmt", "ctx")(kwargs)
+        if ctx["filter"](**kwargs):
             ctx["offsets"].append(ctx["size_sum"])
-        if name is not None and name == ctx.get("name_needle"):
-            return False
         if fmt:
             ctx["size_sum"] += Numeric.size_of_format(fmt)
         return True
+    
+    def nonnull_pointer_member_offsets(self) -> list[int]:
+        ctx = {
+            "size_sum": 0,
+            "offsets": [],
+            "filter": lambda **kwargs: kwargs["tp"] is not None and kwargs["tp"] is Numeric.Ptr32 and kwargs["value"] != Numeric.NULLPTR}
+        self._visit(self, ctx, Serializable._offset_visitor)
+        return ctx["offsets"]
 
-    @classmethod
-    def type_offset_of_member(cls, member: str) -> int:
-        ctx = {"name_needle": member, "size_sum": 0}
-        cls._visit(cls, ctx, Serializable._offset_visitor)
-        return ctx["size_sum"]
-    
-    def instance_offset_of_member(self, member: str) -> int:
-        ctx = {"name_needle": member, "size_sum": 0}
-        self._visit(self, ctx, Serializable._offset_visitor)
-        return ctx["size_sum"]
-    
-    @classmethod
-    def type_pointer_member_offsets(cls) -> list[int]:
-        ctx = {"type_needle": Numeric.Ptr32, "size_sum": 0, "offsets": []}
-        cls._visit(cls, ctx, Serializable._offset_visitor)
-        return ctx["offsets"]
-    
-    def instance_pointer_member_offsets(self) -> list[int]:
-        ctx = {"type_needle": Numeric.Ptr32, "size_sum": 0, "offsets": []}
-        self._visit(self, ctx, Serializable._offset_visitor)
-        return ctx["offsets"]
-    
     @staticmethod
     def _size_visitor(**kwargs) -> bool:
         (fmt, ctx) = itemgetter("fmt", "ctx")(kwargs)
