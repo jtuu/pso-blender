@@ -102,7 +102,7 @@ class Chunk(Serializable):
     rot_x: I32 = 0
     rot_y: I32 = 0
     rot_z: I32 = 0
-    unk1: U32 = 0
+    radius: F32 = 0.0
     static_mesh_trees: Ptr32 = NULLPTR
     animated_mesh_trees: Ptr32 = NULLPTR
     static_mesh_tree_count: U32 = 0
@@ -128,6 +128,7 @@ def write(path: str, objects: list[bpy.types.Object]):
     nrel.chunk_count = 1
     chunk = Chunk(
         flags=0x00010000,
+        radius=1000.0,
         static_mesh_tree_count=len(objects))
     static_mesh_trees = []
     # Build mesh tree
