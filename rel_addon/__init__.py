@@ -81,15 +81,13 @@ class ExportRel(Operator, ExportHelper):
         if len(objs) < 1:
             return self.cancel_with_warning("REL export error: No objects selected")
         format_info = {
-            "EXPORT_AS_NREL": ("n", n_rel.write),
-            "EXPORT_AS_CREL": ("c", c_rel.write),
-            "EXPORT_AS_RREL": ("r", r_rel.write)
+            "EXPORT_AS_NREL": n_rel.write,
+            "EXPORT_AS_CREL": c_rel.write,
+            "EXPORT_AS_RREL": r_rel.write
         }
         if self.export_as_format not in format_info:
             return self.cancel_with_warning("REL export error: Invalid export format")
-        (filename_suffix, writer) = format_info[self.export_as_format]
-        (noext, ext) = os.path.splitext(self.filepath)
-        writer(noext + filename_suffix + ext, objs)
+        writer(self.filepath, objs)
         return {"FINISHED"}
     
     def export_all(self):
