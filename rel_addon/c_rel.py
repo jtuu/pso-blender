@@ -45,14 +45,14 @@ class Face(Serializable):
 @dataclass
 class Mesh(Serializable):
     unk1: U32 = 0
-    vertices: Ptr32 = NULLPTR
+    vertices: Ptr32 = NULLPTR # VertexArray
     face_count: U32 = 0
-    faces: Ptr32 = NULLPTR
+    faces: Ptr32 = NULLPTR # Face
 
 
 @dataclass
 class CrelNode(Serializable):
-    mesh: Ptr32 = NULLPTR
+    mesh: Ptr32 = NULLPTR # Mesh
     x: F32 = 0.0
     y: F32 = 0.0
     z: F32 = 0.0
@@ -62,7 +62,7 @@ class CrelNode(Serializable):
 
 @dataclass
 class Crel(Serializable):
-    nodes: Ptr32 = NULLPTR
+    nodes: Ptr32 = NULLPTR # CrelNode
 
 
 def write(path: str, objects: list[bpy.types.Object]):

@@ -41,16 +41,16 @@ class IndexBuffer(Serializable):
 @dataclass
 class VertexBufferContainer(Serializable):
     vertex_format: U32 = 0
-    vertex_buffer: Ptr32 = NULLPTR
+    vertex_buffer: Ptr32 = NULLPTR # VertexBuffer
     vertex_size: U32 = 0
     vertex_count: U32 = 0
 
 
 @dataclass
 class IndexBufferContainer(Serializable):
-    renderstate_args: Ptr32 = NULLPTR
+    renderstate_args: Ptr32 = NULLPTR # Unknown
     renderstate_args_count: U32 = 0
-    index_buffer: Ptr32 = NULLPTR
+    index_buffer: Ptr32 = NULLPTR # IndexBuffer
     index_count: U32 = 0
     unk1: U32 = 0
 
@@ -58,9 +58,9 @@ class IndexBufferContainer(Serializable):
 @dataclass
 class Mesh(Serializable):
     flags: U32 = 0
-    vertex_buffers: Ptr32 = NULLPTR
+    vertex_buffers: Ptr32 = NULLPTR # VertexBufferContainer
     vertex_buffer_count: U32 = 0
-    index_buffers: Ptr32 = NULLPTR
+    index_buffers: Ptr32 = NULLPTR # IndexBufferContainer
     index_buffer_count: U32 = 0
     unk1: U32 = 0
     unk2: U32 = 0
@@ -70,7 +70,7 @@ class Mesh(Serializable):
 class MeshTreeNode(Serializable):
     """Guessing the point of this is to have hierarchical transformations"""
     flags: U32 = 0
-    mesh: Ptr32 = NULLPTR
+    mesh: Ptr32 = NULLPTR # Mesh
     x: F32 = 0.0
     y: F32 = 0.0
     z: F32 = 0.0
@@ -80,13 +80,13 @@ class MeshTreeNode(Serializable):
     scale_x: F32 = 0.0
     scale_y: F32 = 0.0
     scale_z: F32 = 0.0
-    child: Ptr32 = NULLPTR
-    next: Ptr32 = NULLPTR
+    child: Ptr32 = NULLPTR # MeshTreeNode
+    next: Ptr32 = NULLPTR # MeshTreeNode
 
 
 @dataclass
 class MeshTree(Serializable):
-    root_node: Ptr32 = NULLPTR
+    root_node: Ptr32 = NULLPTR # MeshTreeNode
     unk1: U32 = 0
     unk2: U32 = 0
     flags: U32 = 0
@@ -103,8 +103,8 @@ class Chunk(Serializable):
     rot_y: I32 = 0
     rot_z: I32 = 0
     radius: F32 = 0.0
-    static_mesh_trees: Ptr32 = NULLPTR
-    animated_mesh_trees: Ptr32 = NULLPTR
+    static_mesh_trees: Ptr32 = NULLPTR # MeshTree
+    animated_mesh_trees: Ptr32 = NULLPTR # Unknown
     static_mesh_tree_count: U32 = 0
     animated_mesh_tree_count: U32 = 0
     flags: U32 = 0
@@ -117,8 +117,8 @@ class NrelFmt2(Serializable):
     chunk_count: U16 = 0
     unk2: U16 = 0
     unk3: U32 = 0
-    chunks: Ptr32 = NULLPTR
-    njtl: Ptr32 = NULLPTR
+    chunks: Ptr32 = NULLPTR # Chunk
+    njtl: Ptr32 = NULLPTR # Unknown
 
 
 def write(path: str, objects: list[bpy.types.Object]):
