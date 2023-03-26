@@ -85,6 +85,7 @@ class ExportRel(Operator, ExportHelper):
             "EXPORT_AS_CREL": c_rel.write,
             "EXPORT_AS_RREL": r_rel.write
         }
+        writer = format_info[self.export_as_format]
         if self.export_as_format not in format_info:
             return self.cancel_with_warning("REL export error: Invalid export format")
         writer(self.filepath, objs)
