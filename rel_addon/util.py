@@ -1,15 +1,26 @@
-from bpy.types import Mesh
+import bpy.types 
 from dataclasses import field
 from .trianglestripifier import TriangleStripifier
 from . import trianglemesh
 
 
-def mesh_faces(mesh: Mesh) -> list[tuple[int, int, int]]:
+def mesh_faces(mesh: bpy.types.Mesh) -> list[tuple[int, int, int]]:
     """Returns vertex indices of triangulated faces"""
     faces = []
     for tri in mesh.loop_triangles:
         faces.append(tuple(tri.vertices))
     return faces
+
+
+def get_object_diffuse_texture(obj: bpy.types.Object) -> bpy.types.Image:
+    """Assumes the first image node is the correct one"""
+    for mat_slot in obj.material_slots:
+        if not mat_slot.material or not mat_slot.material.node_tree:
+            continue
+        for node in mat_slot.material.node_tree.nodes:
+            if node.type == "TEX_IMAGE":
+                return node.image
+    return None
 
 
 def stripify(triangles):

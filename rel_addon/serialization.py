@@ -70,6 +70,13 @@ class ResizableBuffer:
     def grow(self, by):
         self.buffer += bytearray(by)
         self.capacity += by
+    
+    def append(self, other: bytearray):
+        self.buffer += other
+        self.capacity += len(other)
+    
+    def seek_to_end(self):
+        self.offset = self.capacity
 
     def pack(self, fmt: str, *vals) -> int:
         """Returns absolute offset of where data was written"""

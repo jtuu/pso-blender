@@ -86,7 +86,7 @@ class Room(Serializable):
 @dataclass
 class Minimap(Serializable):
     rooms: Ptr32 = NULLPTR # Room
-    unk1: U32 = 0
+    unk1: U32 = 0 # Maybe textures
     room_count: U32 = 0
     unk2: U32 = 0
 
