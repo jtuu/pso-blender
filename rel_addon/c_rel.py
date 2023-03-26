@@ -2,6 +2,7 @@ from dataclasses import dataclass, field
 import bpy.types 
 from .rel import Rel
 from .serialization import Serializable, Numeric
+from . import util
 
 
 U8 = Numeric.U8
@@ -74,19 +75,17 @@ def write(path: str, objects: list[bpy.types.Object]):
 
         vertex_array = VertexArray()
         for local_vert in blender_mesh.vertices:
-            world_vert = obj.matrix_world @ local_vert.co
-            # Swap y and z
+            world_vert = util.from_blender_axes(obj.matrix_world @ local_vert.co)
             vertex_array.vertices.append(Vertex(
-                x=world_vert[0], y=world_vert[2], z=world_vert[1]))
+                x=world_vert[0], y=world_vert[1], z=world_vert[2]))
 
         mesh = Mesh(vertices=rel.write(vertex_array), face_count=len(blender_mesh.loop_triangles))
 
         # Write faces
         first_face_ptr = None
         for face in blender_mesh.loop_triangles:
-            # Reverse winding for some reason
-            rface = tuple(reversed(face.vertices))
-            normal = face.normal
+            rface = face.vertices
+            normal = util.from_blender_axes(face.normal)
             ptr = rel.write(Face(
                 flags=0x0101,
                 index0=rface[0],
@@ -94,8 +93,8 @@ def write(path: str, objects: list[bpy.types.Object]):
                 index2=rface[2],
                 radius=300.0,
                 nx=normal[0],
-                ny=normal[2],
-                nz=normal[1]))
+                ny=normal[1],
+                nz=normal[2]))
             if first_face_ptr is None:
                 first_face_ptr = ptr
         mesh.faces = first_face_ptr

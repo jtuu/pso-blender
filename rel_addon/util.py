@@ -45,3 +45,11 @@ def magic_bytes(s: str) -> list[int]:
 
 def magic_field(s: str):
     return field(default_factory=lambda: magic_bytes(s))
+
+
+def from_blender_axes(tup, invert_z=True):
+    """Swaps second and third component"""
+    x, z, y = tup
+    if invert_z:
+        z *= -1
+    return (x, y, z)

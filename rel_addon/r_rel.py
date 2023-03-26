@@ -103,10 +103,9 @@ def write(path: str, room_objects: list[bpy.types.Object]):
         faces = util.mesh_faces(mesh)
         vertices = []
         for local_vert in mesh.vertices:
-            world_vert = obj.matrix_world @ local_vert.co
-            # Swap y and z because blender has them swapped
+            world_vert = util.from_blender_axes(obj.matrix_world @ local_vert.co)
             vertices.append(Vertex(
-                x=world_vert[0], y=world_vert[2], z=world_vert[1],
+                x=world_vert[0], y=world_vert[1], z=world_vert[2],
                 nx=0.0, ny=1.0, nz=0.0))
         strips = util.stripify(faces)
 

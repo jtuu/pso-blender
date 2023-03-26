@@ -230,9 +230,9 @@ def write(nrel_path: str, xvm_path: str, objects: list[bpy.types.Object]):
             vertex_size = VertexFormat1.type_size()
             vertex_buffer = VertexBufferFormat1()
             for local_vert in blender_mesh.vertices:
-                world_vert = obj.matrix_world @ local_vert.co
+                world_vert = util.from_blender_axes(obj.matrix_world @ local_vert.co)
                 vertex_buffer.vertices.append(VertexFormat1(
-                    x=world_vert[0], y=world_vert[2], z=world_vert[1]))
+                    x=world_vert[0], y=world_vert[1], z=world_vert[2]))
             # Get UVs
             for tri in blender_mesh.loop_triangles:
                 for (vert_idx, loop_idx) in zip(tri.vertices, tri.loops):
@@ -245,14 +245,13 @@ def write(nrel_path: str, xvm_path: str, objects: list[bpy.types.Object]):
             vertex_size = VertexFormat4.type_size()
             vertex_buffer = VertexBufferFormat4()
             for (i, local_vert) in enumerate(blender_mesh.vertices):
-                world_vert = obj.matrix_world @ local_vert.co
+                world_vert = util.from_blender_axes(obj.matrix_world @ local_vert.co)
                 # Add some color to make it easier to see
                 r = (i * 10) % 0x7f
                 g = (i * 3 + 20) % 0x7f
                 b = (i + 30) % 0x7f
-                # Swap y and z
                 vertex_buffer.vertices.append(VertexFormat4(
-                    x=world_vert[0], y=world_vert[2], z=world_vert[1],
+                    x=world_vert[0], y=world_vert[1], z=world_vert[2],
                     r=r, g=g, b=b, a=0xff))
         mesh.vertex_buffers = rel.write(VertexBufferContainer(
             vertex_format=vertex_format,
