@@ -70,7 +70,7 @@ def write(path: str, objects: list[bpy.types.Object]):
     nodes = []
     for obj in objects:
         blender_mesh = obj.to_mesh()
-        node = CrelNode(flags=0x00000921, radius=300.0)
+        node = CrelNode(flags=0x00000921, radius=3000.0)
 
         vertex_array = VertexArray()
         for local_vert in blender_mesh.vertices:
