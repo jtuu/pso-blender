@@ -1,4 +1,5 @@
 from bpy.types import Mesh
+from dataclasses import field
 from .trianglestripifier import TriangleStripifier
 from . import trianglemesh
 
@@ -25,3 +26,11 @@ def stripify(triangles):
     # Compute strips
     stripifier = TriangleStripifier(mesh)
     return stripifier.find_all_strips()
+
+
+def magic_bytes(s: str) -> list[int]:
+    return list(map(ord, s))
+
+
+def magic_field(s: str):
+    return field(default_factory=lambda: magic_bytes(s))

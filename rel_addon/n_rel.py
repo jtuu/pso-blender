@@ -112,7 +112,7 @@ class Chunk(Serializable):
 
 @dataclass
 class NrelFmt2(Serializable):
-    magic: list[U8] = field(default_factory=lambda: list(map(ord, "fmt2")))
+    magic: list[U8] = util.magic_field("fmt2")
     unk1: U32 = 0
     chunk_count: U16 = 0
     unk2: U16 = 0
