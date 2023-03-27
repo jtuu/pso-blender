@@ -1,4 +1,4 @@
-import os, sys
+import os, sys, math
 from dataclasses import dataclass, field
 import bpy.types
 from .rel import Rel
@@ -220,8 +220,8 @@ def write(nrel_path: str, xvm_path: str, objects: list[bpy.types.Object]):
     nrel.chunk_count = 1
     chunk = Chunk(
         flags=0x00010000,
-        radius=1000.0,
         static_mesh_tree_count=len(objects))
+    farthest_sq = float("-inf")
     static_mesh_trees = []
     # Build mesh tree
     for obj in objects:
@@ -232,6 +232,7 @@ def write(nrel_path: str, xvm_path: str, objects: list[bpy.types.Object]):
         strips = util.stripify(faces)
         tex_image = util.get_object_diffuse_texture(obj)
         vertex_colors = blender_mesh.color_attributes[0] if len(blender_mesh.color_attributes) > 0 else None
+        geom_center = util.geometry_world_center(obj)
         mesh = Mesh(vertex_buffer_count=1, index_buffer_count=len(strips))
 
         if tex_image:
@@ -267,6 +268,7 @@ def write(nrel_path: str, xvm_path: str, objects: list[bpy.types.Object]):
         # Construct vertices with coords
         for local_vert in blender_mesh.vertices:
             world_vert = util.from_blender_axes(obj.matrix_world @ local_vert.co)
+            farthest_sq = max(farthest_sq, util.distance_squared(geom_center, world_vert))
             vertex_buffer.vertices.append(vertex_ctor(
                 x=world_vert[0], y=world_vert[1], z=world_vert[2]))
         # Get UVs
@@ -328,7 +330,7 @@ def write(nrel_path: str, xvm_path: str, objects: list[bpy.types.Object]):
         mesh_node.mesh = rel.write(mesh)
         static_mesh_tree.root_node = rel.write(mesh_node)
         static_mesh_trees.append(static_mesh_tree)
-
+    chunk.radius = math.sqrt(farthest_sq)
     first_static_mesh_tree_ptr = None
     for tree in static_mesh_trees:
         ptr = rel.write(tree)
