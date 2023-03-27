@@ -1,3 +1,5 @@
+import multiprocessing
+import functools
 from dataclasses import dataclass, field
 from struct import pack_into
 import bpy
@@ -127,9 +129,32 @@ def dxt_palettize_block(
     return palette_indices
 
 
+def dxt1_compress_block(
+        pixels: list[float],
+        img_width: int, block_dim: int,
+        src_channels: int, dst_channels: int,
+        coords: tuple[int, int]
+    ) -> tuple[int, int, int]:
+    # Find RGB bounds of block
+    min_rgb8, max_rgb8 = rgb_bounds_of_block(pixels, coords[0], coords[1], img_width, block_dim, src_channels, dst_channels)
+    # Quantize
+    min_rgb565, max_rgb565 = dxt_quantize(min_rgb8, max_rgb8)
+    # Simple write if there is only one color
+    if max_rgb565 == min_rgb565:
+        palette_indices = 0
+        return (min_rgb565, max_rgb565, palette_indices)
+    # Fix ordering if it got swapped during quantization
+    if max_rgb565 < min_rgb565:
+        max_rgb565, min_rgb565 = min_rgb565, max_rgb565
+    # Compute palette
+    palette = dxt_make_palette(min_rgb565, max_rgb565)
+    # Compute pixel palette indices of block
+    palette_indices = dxt_palettize_block(pixels, palette, coords[0], coords[1], img_width, block_dim, src_channels, dst_channels)
+    return (min_rgb565, max_rgb565, palette_indices)
+
+
 DXT1_BLOCK_DIM = 4
 def dxt1_compress(image: bpy.types.Image) -> bytearray:
-    """This function is really slow :("""
     src_channels = image.channels
     dst_channels = 3
     if src_channels < dst_channels:
@@ -138,34 +163,22 @@ def dxt1_compress(image: bpy.types.Image) -> bytearray:
     dst_block_size = 2 + 2 + 4
     if width % DXT1_BLOCK_DIM != 0 or height % DXT1_BLOCK_DIM != 0:
         raise Exception("XVR error: Image dimensions must be multiples of {}".format(DXT1_BLOCK_DIM))
+    pixels = list(image.pixels)
     dst_buf = bytearray(width * height // dst_block_size * 4)
-    dst_offset = 0
-    # Iterate blocks
+    # Create work
+    block_coords = []
     for y in range(0, height, DXT1_BLOCK_DIM):
         for x in range(0, width, DXT1_BLOCK_DIM):
-            # Find RGB bounds of block
-            min_rgb8, max_rgb8 = rgb_bounds_of_block(image.pixels, x, y, width, DXT1_BLOCK_DIM, src_channels, dst_channels)
-            # Quantize
-            min_rgb565, max_rgb565 = dxt_quantize(min_rgb8, max_rgb8)
-            # Simple write if there is only one color
-            if max_rgb565 == min_rgb565:
-                palette_indices = 0
-                pack_into("<HHL", dst_buf, dst_offset, max_rgb565, min_rgb565, palette_indices)
-                dst_offset += dst_block_size
-                continue
-            # Fix ordering if it got swapped during quantization
-            if max_rgb565 < min_rgb565:
-                max_rgb565, min_rgb565 = min_rgb565, max_rgb565
-            # Compute palette
-            palette = dxt_make_palette(min_rgb565, max_rgb565)
-            # Write palette
-            pack_into("<HH", dst_buf, dst_offset, max_rgb565, min_rgb565)
-            dst_offset += 2 + 2
-            # Compute pixel palette indices of block
-            palette_indices = dxt_palettize_block(image.pixels, palette, x, y, width, DXT1_BLOCK_DIM, src_channels, dst_channels)
-            # Write pixel indices
-            pack_into("<L", dst_buf, dst_offset, palette_indices)
-            dst_offset += 4
+            block_coords.append((x, y))
+    # Start workers
+    worker_fn = functools.partial(dxt1_compress_block, pixels, width, DXT1_BLOCK_DIM, src_channels, dst_channels)
+    with multiprocessing.Pool() as pool:
+        results = pool.map(worker_fn, block_coords)
+    # Write results into buffer
+    for (block_idx, result) in enumerate(results):
+        (min_color, max_color, indices) = result
+        dst_offset = block_idx * dst_block_size
+        pack_into("<HHL", dst_buf, dst_offset, max_color, min_color, indices)
     return dst_buf
 
 
