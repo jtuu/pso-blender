@@ -1,3 +1,4 @@
+import math
 from dataclasses import dataclass, field
 import bpy.types
 from .rel import Rel
@@ -52,7 +53,7 @@ class IndexListNode(Serializable):
 
 
 @dataclass
-class VertexContainer2(Serializable):
+class Mesh(Serializable):
     vertex_list: Ptr32 = NULLPTR # VertexListNode
     index_list: Ptr32 = NULLPTR # IndexListNode
     x: F32 = 0.0
@@ -63,9 +64,9 @@ class VertexContainer2(Serializable):
 # Dunno what the point of this extra level of indirection is.
 # Maybe to have more than one mesh per room?
 @dataclass
-class VertexContainer1(Serializable):
+class MeshContainer(Serializable):
     unk1: U32 = 0
-    vertex_container2: Ptr32 = NULLPTR # VertexContainer2
+    mesh: Ptr32 = NULLPTR # Mesh
 
 
 @dataclass
@@ -80,7 +81,7 @@ class Room(Serializable):
     rot_z: I32 = 0
     color_alpha: F32 = 0.0
     discovery_radius: F32 = 0.0
-    vertex_container1: Ptr32 = NULLPTR # VertexContainer1
+    mesh_container: Ptr32 = NULLPTR # MeshContainer
 
 
 @dataclass
@@ -97,20 +98,33 @@ def write(path: str, room_objects: list[bpy.types.Object]):
     minimap.room_count = len(room_objects)
     rooms = []
     for (i, obj) in enumerate(room_objects):
-        mesh = obj.to_mesh()
-        room = Room(id=i, discovery_radius=1000.0, flags=1)
+        blender_mesh = obj.to_mesh()
+        geom_center = util.from_blender_axes(util.geometry_world_center(obj))
+        room = Room(
+            id=i,
+            flags=1,
+            x=geom_center[0],
+            y=geom_center[1],
+            z=geom_center[2])
 
-        faces = util.mesh_faces(mesh)
+        faces = util.mesh_faces(blender_mesh)
         vertices = []
-        for local_vert in mesh.vertices:
-            world_vert = util.from_blender_axes(obj.matrix_world @ local_vert.co)
+        farthest_sq = float("-inf")
+        for local_vert in blender_mesh.vertices:
+            # Apply transforms from object but translate position back to local
+            world_vert = util.from_blender_axes(obj.matrix_world @ local_vert.co) - geom_center
+            farthest_sq = max(farthest_sq, util.distance_squared(geom_center, world_vert))
             vertices.append(Vertex(
                 x=world_vert[0], y=world_vert[1], z=world_vert[2],
                 nx=0.0, ny=1.0, nz=0.0))
+        room.discovery_radius = math.sqrt(farthest_sq)
         strips = util.stripify(faces)
 
-        container1 = VertexContainer1()
-        container2 = VertexContainer2()
+        container = MeshContainer()
+        mesh = Mesh(
+            x=geom_center[0],
+            y=geom_center[1],
+            z=geom_center[2])
 
         vertex_node = VertexListNode(
             flags=0x29,
@@ -147,14 +161,14 @@ def write(path: str, room_objects: list[bpy.types.Object]):
 
         rel.write(IndexListNode(flags=0xff)) # Terminator
 
-        container2.vertex_list = vertex_node_ptr
-        container2.index_list = index_node_ptr
-        container2_ptr = rel.write(container2)
+        mesh.vertex_list = vertex_node_ptr
+        mesh.index_list = index_node_ptr
+        mesh_ptr = rel.write(mesh)
 
-        container1.vertex_container2 = container2_ptr
-        container1_ptr = rel.write(container1)
+        container.mesh = mesh_ptr
+        container_ptr = rel.write(container)
 
-        room.vertex_container1 = container1_ptr
+        room.mesh_container = container_ptr
         rooms.append(room)
     # Write rooms
     first_room_ptr = None
