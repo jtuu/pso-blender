@@ -18,4 +18,5 @@ extend-ignore =
     # No lambdas
     E731
 per-file-ignores =
-    rel_addon/__init__.py: F722 F821
+    rel_addon/rel_addon.py: F722 F821
+    rel_addon/__init__.py: F403 F405
