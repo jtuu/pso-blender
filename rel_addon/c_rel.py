@@ -1,3 +1,4 @@
+import math
 from dataclasses import dataclass, field
 import bpy.types 
 from .rel import Rel
@@ -21,6 +22,9 @@ class Vertex(Serializable):
     x: F32 = 0.0
     y: F32 = 0.0
     z: F32 = 0.0
+
+    def __iter__(self):
+        return iter([self.x, self.y, self.z])
 
 
 @dataclass
@@ -71,13 +75,18 @@ def write(path: str, objects: list[bpy.types.Object]):
     nodes = []
     for obj in objects:
         blender_mesh = obj.to_mesh()
-        node = CrelNode(flags=0x00000921, radius=3000.0)
+        node = CrelNode(flags=0x00000921)
 
         vertex_array = VertexArray()
+        geom_center = util.geometry_world_center(obj)
+        farthest_sq = float("-inf")
+        # Get vertices and find farthest vertex
         for local_vert in blender_mesh.vertices:
             world_vert = util.from_blender_axes(obj.matrix_world @ local_vert.co)
+            farthest_sq = max(farthest_sq, util.distance_squared(geom_center, world_vert))
             vertex_array.vertices.append(Vertex(
                 x=world_vert[0], y=world_vert[1], z=world_vert[2]))
+        node.radius = math.sqrt(farthest_sq)
 
         mesh = Mesh(vertices=rel.write(vertex_array), face_count=len(blender_mesh.loop_triangles))
 
@@ -86,12 +95,20 @@ def write(path: str, objects: list[bpy.types.Object]):
         for face in blender_mesh.loop_triangles:
             rface = face.vertices
             normal = util.from_blender_axes(face.normal)
+            # Find distance of farthest vertex from center
+            center = obj.matrix_world @ face.center
+            farthest_sq = max(map(lambda vi: util.distance_squared(vertex_array.vertices[vi], center), face.vertices))
+            radius = math.sqrt(farthest_sq)
+            center = util.from_blender_axes(center)
             ptr = rel.write(Face(
                 flags=0x0101,
+                x=center[0],
+                y=center[1],
+                z=center[2],
                 index0=rface[0],
                 index1=rface[1],
                 index2=rface[2],
-                radius=300.0,
+                radius=radius,
                 nx=normal[0],
                 ny=normal[1],
                 nz=normal[2]))

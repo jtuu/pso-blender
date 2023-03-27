@@ -1,3 +1,5 @@
+import math
+from mathutils import Vector
 import bpy.types 
 from dataclasses import field
 from .trianglestripifier import TriangleStripifier
@@ -53,3 +55,16 @@ def from_blender_axes(tup, invert_z=True):
     if invert_z:
         z *= -1
     return (x, y, z)
+
+
+def distance_squared(a, b) -> float:
+    return sum(map(lambda a_, b_: (b_ - a_) ** 2, a, b))
+
+
+def distance(a, b) -> float:
+    return math.sqrt(distance_squared(a, b))
+
+
+def geometry_world_center(obj: bpy.types.Object) -> Vector:
+    local = 1 / 8 * sum((Vector(corner) for corner in obj.bound_box), Vector())
+    return obj.matrix_world @ local
