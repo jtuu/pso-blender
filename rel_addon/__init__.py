@@ -84,7 +84,7 @@ class ExportRel(Operator, ExportHelper):
         noext, ext = os.path.splitext(self.filepath)
         format_info = {
             "EXPORT_AS_NREL": lambda: n_rel.write(self.filepath, None, objs),
-            "EXPORT_AS_NREL_XVM": lambda: n_rel.write(self.filepath, noext + ".xvm", objs),
+            "EXPORT_AS_NREL_XVM": lambda: n_rel.write(self.filepath, noext[0:-1] + ".xvm", objs),
             "EXPORT_AS_CREL": lambda: c_rel.write(self.filepath, objs),
             "EXPORT_AS_RREL": lambda: r_rel.write(self.filepath, objs),
             "EXPORT_AS_ALL": lambda: self.export_all(objs, objs, objs)
