@@ -18,6 +18,15 @@ NULLPTR = Numeric.NULLPTR
 
 
 @dataclass
+class Color(Serializable):
+    # Purple default
+    r: U8 = 0xff
+    g: U8 = 0
+    b: U8 = 0xff
+    a: U8 = 0xff
+
+
+@dataclass
 class VertexFormat1(Serializable):
     x: F32 = 0.0
     y: F32 = 0.0
@@ -31,11 +40,7 @@ class VertexFormat4(Serializable):
     x: F32 = 0.0
     y: F32 = 0.0
     z: F32 = 0.0
-    # Diffuse color
-    r: U8 = 0
-    g: U8 = 0
-    b: U8 = 0
-    a: U8 = 0
+    diffuse: Color = field(default_factory=Color)
 
 
 @dataclass
@@ -43,10 +48,7 @@ class VertexFormat5(Serializable):
     x: F32 = 0.0
     y: F32 = 0.0
     z: F32 = 0.0
-    r: U8 = 0
-    g: U8 = 0
-    b: U8 = 0
-    a: U8 = 0
+    diffuse: Color = field(default_factory=Color)
     u: F32 = 0.0
     v: F32 = 0.0
 
