@@ -1,3 +1,4 @@
+import os, sys
 from dataclasses import dataclass, field
 import bpy.types
 from .rel import Rel
@@ -162,6 +163,7 @@ class AlignedString(Serializable):
 
     def __init__(self, s: str):
         self.chars = list(str.encode(s))
+        self.chars.append(0)
 
     def serialize_into(self, buf, unused):
         return super().serialize_into(buf, Rel.ALIGNMENT)
@@ -338,7 +340,10 @@ def write(nrel_path: str, xvm_path: str, objects: list[bpy.types.Object]):
     first_texdata2_ptr = NULLPTR
     tex_data1 = TextureData1(data_count=len(textures))
     for tex_path in textures:
-        name_ptr = rel.write(AlignedString(tex_path))
+        # Create a unique name for the texture without needing to write the entire absolute path in the file
+        (dirname, basename) = os.path.split(tex_path)
+        tex_name = "tex_" + str(hash(dirname) + sys.maxsize + 1) + "_" + basename
+        name_ptr = rel.write(AlignedString(tex_name))
         ptr = rel.write(TextureData2(name=name_ptr))
         if first_texdata2_ptr == NULLPTR:
             first_texdata2_ptr = ptr
