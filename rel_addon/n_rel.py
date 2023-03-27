@@ -38,6 +38,19 @@ class VertexFormat4(Serializable):
 
 
 @dataclass
+class VertexFormat5(Serializable):
+    x: F32 = 0.0
+    y: F32 = 0.0
+    z: F32 = 0.0
+    r: U8 = 0
+    g: U8 = 0
+    b: U8 = 0
+    a: U8 = 0
+    u: F32 = 0.0
+    v: F32 = 0.0
+
+
+@dataclass
 class VertexBufferFormat1(Serializable):
     vertices: list[VertexFormat1] = field(default_factory=list)
 
@@ -45,6 +58,11 @@ class VertexBufferFormat1(Serializable):
 @dataclass
 class VertexBufferFormat4(Serializable):
     vertices: list[VertexFormat4] = field(default_factory=list)
+
+
+@dataclass
+class VertexBufferFormat5(Serializable):
+    vertices: list[VertexFormat5] = field(default_factory=list)
 
 
 @dataclass
@@ -211,6 +229,8 @@ def write(nrel_path: str, xvm_path: str, objects: list[bpy.types.Object]):
         faces = util.mesh_faces(blender_mesh)
         strips = util.stripify(faces)
         tex_image = util.get_object_diffuse_texture(obj)
+        vertex_colors = blender_mesh.color_attributes[0] if len(blender_mesh.color_attributes) > 0 else None
+        mesh = Mesh(vertex_buffer_count=1, index_buffer_count=len(strips))
 
         if tex_image:
             # Deduplicate textures
@@ -221,38 +241,53 @@ def write(nrel_path: str, xvm_path: str, objects: list[bpy.types.Object]):
                 texture_id += 1
                 textures[image_abs_path] = xvm.Texture(id=texture_id, image=tex_image)
 
-        mesh = Mesh(vertex_buffer_count=1, index_buffer_count=len(strips))
-
         # Vertices. Only one buffer needed.
+        # Figure out the right vertex format based on what data mesh has.
         if tex_image:
-            # Create vertices with UVs
-            vertex_format = 1
-            vertex_size = VertexFormat1.type_size()
-            vertex_buffer = VertexBufferFormat1()
-            for local_vert in blender_mesh.vertices:
-                world_vert = util.from_blender_axes(obj.matrix_world @ local_vert.co)
-                vertex_buffer.vertices.append(VertexFormat1(
-                    x=world_vert[0], y=world_vert[1], z=world_vert[2]))
-            # Get UVs
+            if vertex_colors:
+                # Coords + color + UVs
+                vertex_format = 5
+                vertex_size = VertexFormat5.type_size()
+                vertex_buffer = VertexBufferFormat5()
+                vertex_ctor = VertexFormat5
+            else:
+                # Coords + UVs
+                vertex_format = 1
+                vertex_size = VertexFormat1.type_size()
+                vertex_buffer = VertexBufferFormat1()
+                vertex_ctor = VertexFormat1
+        else:
+            # Coords + color
+            vertex_format = 4
+            vertex_size = VertexFormat4.type_size()
+            vertex_buffer = VertexBufferFormat4()
+            vertex_ctor = VertexFormat4
+        # Construct vertices with coords
+        for local_vert in blender_mesh.vertices:
+            world_vert = util.from_blender_axes(obj.matrix_world @ local_vert.co)
+            vertex_buffer.vertices.append(vertex_ctor(
+                x=world_vert[0], y=world_vert[1], z=world_vert[2]))
+        # Get UVs
+        if tex_image:
             for tri in blender_mesh.loop_triangles:
                 for (vert_idx, loop_idx) in zip(tri.vertices, tri.loops):
                     u, v = blender_mesh.uv_layers[0].data[loop_idx].uv
                     vertex_buffer.vertices[vert_idx].u = u
                     vertex_buffer.vertices[vert_idx].v = v
-        else:
-            # Create vertices with color
-            vertex_format = 4
-            vertex_size = VertexFormat4.type_size()
-            vertex_buffer = VertexBufferFormat4()
-            for (i, local_vert) in enumerate(blender_mesh.vertices):
-                world_vert = util.from_blender_axes(obj.matrix_world @ local_vert.co)
-                # Add some color to make it easier to see
-                r = (i * 10) % 0x7f
-                g = (i * 3 + 20) % 0x7f
-                b = (i + 30) % 0x7f
-                vertex_buffer.vertices.append(VertexFormat4(
-                    x=world_vert[0], y=world_vert[1], z=world_vert[2],
-                    r=r, g=g, b=b, a=0xff))
+        # Get colors
+        if vertex_colors:
+            # Despite the names of the types, they appear to be identical
+            if vertex_colors.data_type == "FLOAT_COLOR" or vertex_colors.data_type == "BYTE_COLOR":
+                for (vert_idx, attr_val) in enumerate(vertex_colors.data):
+                    vert = vertex_buffer.vertices[vert_idx]
+                    col = attr_val.color
+                    # BGRA
+                    vert.b = int(col[0] * 0xff)
+                    vert.g = int(col[1] * 0xff)
+                    vert.r = int(col[2] * 0xff)
+                    vert.a = int(col[3] * 0xff)
+            else:
+                raise Exception("N.REL Error: Invalid vertex color format \"{}\"".format(vertex_colors.data_type))
         mesh.vertex_buffers = rel.write(VertexBufferContainer(
             vertex_format=vertex_format,
             vertex_buffer=rel.write(vertex_buffer),
