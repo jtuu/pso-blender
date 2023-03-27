@@ -338,19 +338,20 @@ def write(nrel_path: str, xvm_path: str, objects: list[bpy.types.Object]):
             first_static_mesh_tree_ptr = ptr
     chunk.static_mesh_trees = first_static_mesh_tree_ptr
     nrel.chunks = rel.write(chunk)
-    # Textures
-    first_texdata2_ptr = NULLPTR
-    tex_data1 = TextureData1(data_count=len(textures))
-    for tex_path in textures:
-        # Create a unique name for the texture without needing to write the entire absolute path in the file
-        (dirname, basename) = os.path.split(tex_path)
-        tex_name = "tex_" + str(hash(dirname) + sys.maxsize + 1) + "_" + basename
-        name_ptr = rel.write(AlignedString(tex_name))
-        ptr = rel.write(TextureData2(name=name_ptr))
-        if first_texdata2_ptr == NULLPTR:
-            first_texdata2_ptr = ptr
-    tex_data1.data = first_texdata2_ptr
-    nrel.texture_data = rel.write(tex_data1)
+    # Texture metadata
+    if len(textures) > 0:
+        first_texdata2_ptr = NULLPTR
+        tex_data1 = TextureData1(data_count=len(textures))
+        for tex_path in textures:
+            # Create a unique name for the texture without needing to write the entire absolute path in the file
+            (dirname, basename) = os.path.split(tex_path)
+            tex_name = "tex_" + str(hash(dirname) + sys.maxsize + 1) + "_" + basename
+            name_ptr = rel.write(AlignedString(tex_name))
+            ptr = rel.write(TextureData2(name=name_ptr))
+            if first_texdata2_ptr == NULLPTR:
+                first_texdata2_ptr = ptr
+        tex_data1.data = first_texdata2_ptr
+        nrel.texture_data = rel.write(tex_data1)
     # Write files
     file_contents = rel.finish(rel.write(nrel))
     with open(nrel_path, "wb") as f:
