@@ -1,11 +1,15 @@
-import multiprocessing
-import functools
+import multiprocessing, functools, sys
 from dataclasses import dataclass, field
 from struct import pack_into
-import bpy
-import bpy.types
 from .serialization import Serializable, Numeric, ResizableBuffer
 from . import util
+
+
+# Work around weird behavior with using multiprocessing in Blender on Windows
+ORIG_SYS_PATH = list(sys.path)
+import bpy
+import bpy.types
+BPY_SYS_PATH = list(sys.path)
 
 
 U8 = Numeric.U8
@@ -172,8 +176,10 @@ def dxt1_compress(image: bpy.types.Image) -> bytearray:
             block_coords.append((x, y))
     # Start workers
     worker_fn = functools.partial(dxt1_compress_block, pixels, width, DXT1_BLOCK_DIM, src_channels, dst_channels)
+    sys.path = ORIG_SYS_PATH # Workaround
     with multiprocessing.Pool() as pool:
         results = pool.map(worker_fn, block_coords)
+    sys.path = BPY_SYS_PATH
     # Write results into buffer
     for (block_idx, result) in enumerate(results):
         (min_color, max_color, indices) = result
