@@ -25,7 +25,7 @@ def filter_objects_by_props(props: list[str]) -> list[Object]:
 class ExportRel(Operator, ExportHelper):
     """Export render geometry (n.rel), collision geometry (c.rel), and minimap geometry (r.rel)"""
     bl_idname = "export_scene.rel"
-    bl_label = bl_info["name"]
+    bl_label = "Export RELs (PSO)"
 
     # ExportHelper mixin class uses this
     filename_ext = ".rel"
@@ -148,7 +148,7 @@ class CUSTOM_PT_export_settings(Panel):
 
 
 def menu_func_export(self, context):
-    self.layout.operator(ExportRel.bl_idname, text=bl_info["name"])
+    self.layout.operator(ExportRel.bl_idname, text="Export RELs (PSO)")
 
 
 # Register and add to the "file selector" menu
