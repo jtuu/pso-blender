@@ -6,13 +6,6 @@ from bpy.types import Operator, Object, Panel
 from . import r_rel, n_rel, c_rel
 
 
-bl_info = {
-    "name": "Export RELs (PSO)",
-    "blender": (3, 4, 0),
-    "category": "Export",
-}
-
-
 def filter_objects_by_props(props: list[str]) -> list[Object]:
     """Throws if an object has at least one prop but not all props"""
     objects = []
