@@ -230,12 +230,17 @@ def write(nrel_path: str, xvm_path: str, objects: list[bpy.types.Object]):
         blender_mesh = obj.to_mesh()
         static_mesh_tree = MeshTree(flags=0x00220000)
         mesh_node = MeshTreeNode(flags=0x17, scale_x=1.0, scale_y=1.0, scale_z=1.0)
-        faces = util.mesh_faces(blender_mesh)
-        strips = util.stripify(faces)
         tex_image = util.get_object_diffuse_texture(obj)
-        vertex_colors = blender_mesh.color_attributes[0] if len(blender_mesh.color_attributes) > 0 else None
         geom_center = util.geometry_world_center(obj)
-        mesh = Mesh(vertex_buffer_count=1, index_buffer_count=len(strips))
+        mesh = Mesh(vertex_buffer_count=1)
+
+        vertex_colors = blender_mesh.color_attributes[0] if len(blender_mesh.color_attributes) > 0 else None
+        if vertex_colors:
+            # Despite the names of the types, they appear to be identical
+            if vertex_colors.data_type != "FLOAT_COLOR" and vertex_colors.data_type != "BYTE_COLOR":
+                raise Exception("N.REL Error: Invalid vertex color format \"{}\"".format(vertex_colors.data_type))
+            if len(vertex_colors.data) != len(blender_mesh.loop_triangles) * 3:
+                raise Exception("N.REL Error: Vertex color data length mismatch. Remember to triangulate your mesh before painting.")
 
         if tex_image:
             # Deduplicate textures
@@ -267,39 +272,41 @@ def write(nrel_path: str, xvm_path: str, objects: list[bpy.types.Object]):
             vertex_size = VertexFormat4.type_size()
             vertex_buffer = VertexBufferFormat4()
             vertex_ctor = VertexFormat4
-        # Construct vertices with coords
-        for local_vert in blender_mesh.vertices:
-            world_vert = util.from_blender_axes(obj.matrix_world @ local_vert.co)
-            farthest_sq = max(farthest_sq, util.distance_squared(geom_center, world_vert))
-            vertex_buffer.vertices.append(vertex_ctor(
-                x=world_vert[0], y=world_vert[1], z=world_vert[2]))
-        # Get UVs
-        if tex_image:
-            for tri in blender_mesh.loop_triangles:
-                for (vert_idx, loop_idx) in zip(tri.vertices, tri.loops):
+
+        faces = []
+        vertex_buffer.vertices = [None] * len(blender_mesh.loops)
+        # Create vertices. One vertex per loop.
+        for face in blender_mesh.loop_triangles:
+            faces.append(tuple(face.loops))
+            for (vert_idx, loop_idx) in zip(face.vertices, face.loops):
+                local_vert = blender_mesh.vertices[vert_idx]
+                world_vert = util.from_blender_axes(obj.matrix_world @ local_vert.co)
+                farthest_sq = max(farthest_sq, util.distance_squared(geom_center, world_vert))
+                vertex = vertex_ctor(
+                    x=world_vert[0],
+                    y=world_vert[1],
+                    z=world_vert[2])
+                vertex_buffer.vertices[loop_idx] = vertex
+                # Get UVs
+                if tex_image:
                     u, v = blender_mesh.uv_layers[0].data[loop_idx].uv
-                    vertex_buffer.vertices[vert_idx].u = u
-                    vertex_buffer.vertices[vert_idx].v = v
-        # Get colors
-        if vertex_colors:
-            # Despite the names of the types, they appear to be identical
-            if vertex_colors.data_type == "FLOAT_COLOR" or vertex_colors.data_type == "BYTE_COLOR":
-                for (vert_idx, attr_val) in enumerate(vertex_colors.data):
-                    vert = vertex_buffer.vertices[vert_idx]
-                    col = attr_val.color
+                    vertex.u = u
+                    vertex.v = v
+                # Get colors
+                # Assume faces were triangulated when painting and vertex color array aligns with loops
+                if vertex_colors:
+                    col = vertex_colors.data[loop_idx].color
                     # BGRA
-                    vert.b = int(col[0] * 0xff)
-                    vert.g = int(col[1] * 0xff)
-                    vert.r = int(col[2] * 0xff)
-                    vert.a = int(col[3] * 0xff)
-            else:
-                raise Exception("N.REL Error: Invalid vertex color format \"{}\"".format(vertex_colors.data_type))
+                    vertex.diffuse.b = int(col[0] * 0xff)
+                    vertex.diffuse.g = int(col[1] * 0xff)
+                    vertex.diffuse.r = int(col[2] * 0xff)
+                    vertex.diffuse.a = int(col[3] * 0xff)
         mesh.vertex_buffers = rel.write(VertexBufferContainer(
             vertex_format=vertex_format,
             vertex_buffer=rel.write(vertex_buffer),
             vertex_size=vertex_size,
             vertex_count=len(vertex_buffer.vertices)))
-        
+
         # Render state args
         rs_arg_count = 0
         first_rs_arg_ptr = NULLPTR
@@ -310,9 +317,10 @@ def write(nrel_path: str, xvm_path: str, objects: list[bpy.types.Object]):
                 ptr = rel.write(rs_arg)
                 if first_rs_arg_ptr == NULLPTR:
                     first_rs_arg_ptr = ptr
-        
+
         # Indices. One buffer per strip.
         index_buffer_containers = []
+        strips = util.stripify(faces)
         for strip in strips:
             buf_ptr = rel.write(IndexBuffer(indices=strip), True)
             index_buffer_containers.append(IndexBufferContainer(
@@ -320,13 +328,14 @@ def write(nrel_path: str, xvm_path: str, objects: list[bpy.types.Object]):
                 index_count=len(strip),
                 renderstate_args=first_rs_arg_ptr,
                 renderstate_args_count=rs_arg_count))
-            
+
         # Containers need to be written back to back
         first_index_buffer_container_ptr = None
         for buf in index_buffer_containers:
             ptr = rel.write(buf)
             if first_index_buffer_container_ptr is None:
                 first_index_buffer_container_ptr = ptr
+        mesh.index_buffer_count = len(strips)
         mesh.index_buffers = first_index_buffer_container_ptr
 
         mesh_node.mesh = rel.write(mesh)
