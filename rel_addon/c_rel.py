@@ -1,4 +1,5 @@
 import math
+from mathutils import Vector
 from dataclasses import dataclass, field
 import bpy.types 
 from .rel import Rel
@@ -25,6 +26,9 @@ class Vertex(Serializable):
 
     def __iter__(self):
         return iter([self.x, self.y, self.z])
+
+    def as_vector(self) -> Vector:
+        return Vector((self.x, self.y, self.z))
 
 
 @dataclass
@@ -75,15 +79,18 @@ def write(path: str, objects: list[bpy.types.Object]):
     nodes = []
     for obj in objects:
         blender_mesh = obj.to_mesh()
-        node = CrelNode(flags=0x00000921)
-
         vertex_array = VertexArray()
-        geom_center = util.geometry_world_center(obj)
+        geom_center = util.from_blender_axes(util.geometry_world_center(obj))
+        node = CrelNode(
+            flags=0x00000921,
+            x=geom_center[0],
+            y=geom_center[1],
+            z=geom_center[2])
         farthest_sq = float("-inf")
         # Get vertices and find farthest vertex
         for local_vert in blender_mesh.vertices:
             world_vert = util.from_blender_axes(obj.matrix_world @ local_vert.co)
-            farthest_sq = max(farthest_sq, util.distance_squared(geom_center, world_vert))
+            farthest_sq = max(farthest_sq, util.distance_squared(geom_center.xz, world_vert.xz))
             vertex_array.vertices.append(Vertex(
                 x=world_vert[0], y=world_vert[1], z=world_vert[2]))
         node.radius = math.sqrt(farthest_sq)
@@ -93,21 +100,20 @@ def write(path: str, objects: list[bpy.types.Object]):
         # Write faces
         first_face_ptr = None
         for face in blender_mesh.loop_triangles:
-            rface = face.vertices
+            indices = face.vertices
             normal = util.from_blender_axes(face.normal)
             # Find distance of farthest vertex from center
-            center = obj.matrix_world @ face.center
-            farthest_sq = max(map(lambda vi: util.distance_squared(vertex_array.vertices[vi], center), face.vertices))
+            center = util.from_blender_axes(obj.matrix_world @ face.center)
+            farthest_sq = max(map(lambda vi: util.distance_squared(vertex_array.vertices[vi].as_vector().xz, center.xz), face.vertices))
             radius = math.sqrt(farthest_sq)
-            center = util.from_blender_axes(center)
             ptr = rel.write(Face(
                 flags=0x0101,
                 x=center[0],
                 y=center[1],
                 z=center[2],
-                index0=rface[0],
-                index1=rface[1],
-                index2=rface[2],
+                index0=indices[0],
+                index1=indices[1],
+                index2=indices[2],
                 radius=radius,
                 nx=normal[0],
                 ny=normal[1],
