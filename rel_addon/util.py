@@ -68,3 +68,7 @@ def distance(a, b) -> float:
 def geometry_world_center(obj: bpy.types.Object) -> Vector:
     local = 1 / 8 * sum((Vector(corner) for corner in obj.bound_box), Vector())
     return obj.matrix_world @ local
+
+
+def clamp(n, min_val, max_val):
+    return max(min(n, max_val), min_val)

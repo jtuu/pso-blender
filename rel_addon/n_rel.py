@@ -297,10 +297,11 @@ def write(nrel_path: str, xvm_path: str, objects: list[bpy.types.Object]):
                 if vertex_colors:
                     col = vertex_colors.data[loop_idx].color
                     # BGRA
-                    vertex.diffuse.b = int(col[0] * 0xff)
-                    vertex.diffuse.g = int(col[1] * 0xff)
-                    vertex.diffuse.r = int(col[2] * 0xff)
-                    vertex.diffuse.a = int(col[3] * 0xff)
+                    # Need to clamp because light baking can cause values to go higher than normal
+                    vertex.diffuse.b = int(util.clamp(col[0], 0.0, 1.0) * 0xff)
+                    vertex.diffuse.g = int(util.clamp(col[1], 0.0, 1.0) * 0xff)
+                    vertex.diffuse.r = int(util.clamp(col[2], 0.0, 1.0) * 0xff)
+                    vertex.diffuse.a = int(util.clamp(col[3], 0.0, 1.0) * 0xff)
         mesh.vertex_buffers = rel.write(VertexBufferContainer(
             vertex_format=vertex_format,
             vertex_buffer=rel.write(vertex_buffer),
