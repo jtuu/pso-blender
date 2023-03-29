@@ -213,6 +213,15 @@ def make_renderstate_args(texture_id: int, *args, texture_addressing=None, blend
     return rs_args
 
 
+class NrelError(Exception):
+    def __init__(self, msg: str, obj: bpy.types.Object=None):
+        s = "N.REL Error"
+        if obj:
+            s += " in Object '{}'".format(obj.name)
+        s += ": " + msg
+        super().__init__(s)
+
+
 def write(nrel_path: str, xvm_path: str, objects: list[bpy.types.Object]):
     rel = Rel()
     nrel = NrelFmt2()
@@ -238,11 +247,11 @@ def write(nrel_path: str, xvm_path: str, objects: list[bpy.types.Object]):
         if vertex_colors:
             # Despite the names of the types, they appear to be identical
             if vertex_colors.data_type != "FLOAT_COLOR" and vertex_colors.data_type != "BYTE_COLOR":
-                raise Exception("N.REL Error: Invalid vertex color format \"{}\"".format(vertex_colors.data_type))
+                raise NrelError("Invalid vertex color format '{}'.".format(vertex_colors.data_type), obj)
             if vertex_colors.domain != "CORNER":
-                raise Exception("N.REL Error: Invalid vertex color type \"{}\". Please select \"Face Corner\" when creating color attribute.".format(vertex_colors.domain))
+                raise NrelError("Invalid vertex color type '{}'. Please select 'Face Corner' when creating color attribute.".format(vertex_colors.domain), obj)
             if len(vertex_colors.data) != len(blender_mesh.loop_triangles) * 3:
-                raise Exception("N.REL Error: Vertex color data length mismatch. Remember to triangulate your mesh before painting.")
+                raise NrelError("Vertex color data length mismatch. Remember to triangulate your mesh before painting.", obj)
 
         if tex_image:
             # Deduplicate textures
