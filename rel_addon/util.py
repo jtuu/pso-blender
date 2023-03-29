@@ -14,15 +14,17 @@ def mesh_faces(mesh: bpy.types.Mesh) -> list[tuple[int, int, int]]:
     return faces
 
 
-def get_object_diffuse_texture(obj: bpy.types.Object) -> bpy.types.Image:
-    """Assumes the first image node is the correct one"""
+def get_object_diffuse_textures(obj: bpy.types.Object) -> list[bpy.types.Image]:
+    """Assumes the first image node of each material is the correct one"""
+    textures = []
     for mat_slot in obj.material_slots:
         if not mat_slot.material or not mat_slot.material.node_tree:
             continue
         for node in mat_slot.material.node_tree.nodes:
-            if node.type == "TEX_IMAGE":
-                return node.image
-    return None
+            if node.type == "TEX_IMAGE" and node.image:
+                textures.append(node.image)
+                break
+    return textures
 
 
 def stripify(triangles):

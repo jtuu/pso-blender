@@ -234,7 +234,7 @@ def write(nrel_path: str, xvm_path: str, objects: list[bpy.types.Object]):
     rel = Rel()
     nrel = NrelFmt2()
     textures = dict()
-    texture_id = -1
+    texture_id_counter = -1
     # Put all meshes in one chunk because I don't know how chunks are supposed to work exactly
     nrel.chunk_count = 1
     chunk = Chunk(
@@ -247,7 +247,8 @@ def write(nrel_path: str, xvm_path: str, objects: list[bpy.types.Object]):
         blender_mesh = obj.to_mesh()
         static_mesh_tree = MeshTree(flags=0x00220000)
         mesh_node = MeshTreeNode(flags=0x17, scale_x=1.0, scale_y=1.0, scale_z=1.0)
-        tex_image = util.get_object_diffuse_texture(obj)
+        tex_images = util.get_object_diffuse_textures(obj)
+        has_textures = len(tex_images) > 0
         geom_center = util.geometry_world_center(obj)
         mesh = Mesh(vertex_buffer_count=1)
 
@@ -261,7 +262,9 @@ def write(nrel_path: str, xvm_path: str, objects: list[bpy.types.Object]):
             if len(vertex_colors.data) != len(blender_mesh.loop_triangles) * 3:
                 raise NrelError("Vertex color data length mismatch. Remember to triangulate your mesh before painting.", obj)
 
-        if tex_image:
+        # Get texture identifiers
+        texture_ids = []
+        for tex_image in tex_images:
             w, h = tex_image.size
             # If the image file is not found on disk the texture will still exist but without pixels
             if w == 0 or h == 0:
@@ -271,14 +274,15 @@ def write(nrel_path: str, xvm_path: str, objects: list[bpy.types.Object]):
                 # Deduplicate textures
                 image_abs_path = tex_image.filepath_from_user()
                 if image_abs_path in textures:
-                    texture_id = textures[image_abs_path].id
+                    texture_ids.append(textures[image_abs_path].id)
                 else:
-                    texture_id += 1
-                    textures[image_abs_path] = xvm.Texture(id=texture_id, image=tex_image)
+                    texture_id_counter += 1
+                    texture_ids.append(texture_id_counter)
+                    textures[image_abs_path] = xvm.Texture(id=texture_id_counter, image=tex_image)
 
         # Vertices. Only one buffer needed.
         # Figure out the right vertex format based on what data mesh has.
-        if tex_image:
+        if has_textures:
             if vertex_colors:
                 # Coords + color + UVs
                 vertex_format = 5
@@ -298,11 +302,9 @@ def write(nrel_path: str, xvm_path: str, objects: list[bpy.types.Object]):
             vertex_buffer = VertexBufferFormat4()
             vertex_ctor = VertexFormat4
 
-        faces = []
-        vertex_buffer.vertices = [None] * len(blender_mesh.loops)
         # Create vertices. One vertex per loop.
+        vertex_buffer.vertices = [None] * len(blender_mesh.loops)
         for face in blender_mesh.loop_triangles:
-            faces.append(tuple(face.loops))
             for (vert_idx, loop_idx) in zip(face.vertices, face.loops):
                 local_vert = blender_mesh.vertices[vert_idx]
                 world_vert = util.from_blender_axes(obj.matrix_world @ local_vert.co)
@@ -313,7 +315,7 @@ def write(nrel_path: str, xvm_path: str, objects: list[bpy.types.Object]):
                     z=world_vert[2])
                 vertex_buffer.vertices[loop_idx] = vertex
                 # Get UVs
-                if tex_image:
+                if has_textures:
                     u, v = blender_mesh.uv_layers[0].data[loop_idx].uv
                     vertex.u = u
                     vertex.v = v
@@ -327,46 +329,63 @@ def write(nrel_path: str, xvm_path: str, objects: list[bpy.types.Object]):
                     vertex.diffuse.g = int(util.clamp(col[1], 0.0, 1.0) * 0xff)
                     vertex.diffuse.r = int(util.clamp(col[2], 0.0, 1.0) * 0xff)
                     vertex.diffuse.a = int(util.clamp(col[3], 0.0, 1.0) * 0xff)
+        # Put all vertices in one buffer
         mesh.vertex_buffers = rel.write(VertexBufferContainer(
             vertex_format=vertex_format,
             vertex_buffer=rel.write(vertex_buffer),
             vertex_size=vertex_size,
             vertex_count=len(vertex_buffer.vertices)))
 
-        # Render state args
-        rs_arg_count = 0
-        first_rs_arg_ptr = NULLPTR
-        if tex_image:
-            rs_args = make_renderstate_args(
-                texture_id,
-                blend_modes=(4, 7), # D3DBLEND_SRCALPHA, D3DBLEND_INVSRCALPHA
-                texture_addressing=1,  # D3DTADDRESS_MIRROR
-                lighting=False) # Map geometry is generally not affected by lighting
-            rs_arg_count = len(rs_args)
-            for rs_arg in rs_args:
-                ptr = rel.write(rs_arg)
-                if first_rs_arg_ptr == NULLPTR:
-                    first_rs_arg_ptr = ptr
+        # Group faces by material
+        material_strips = []
+        if has_textures:
+            material_faces = []
+            for i in range(len(obj.material_slots)):
+                material_faces.append([])
+            for face in blender_mesh.loop_triangles:
+                material_faces[face.material_index].append(tuple(face.loops))
+            for faces in material_faces:
+                material_strips.append(util.stripify(faces))
+        else:
+            faces = []
+            for face in blender_mesh.loop_triangles:
+                faces.append(tuple(face.loops))
+            material_strips.append(util.stripify(faces))
 
         # Indices. One buffer per strip.
         index_buffer_containers = []
-        strips = util.stripify(faces)
-        for strip in strips:
-            buf_ptr = rel.write(IndexBuffer(indices=strip), True)
-            index_buffer_containers.append(IndexBufferContainer(
-                index_buffer=buf_ptr,
-                index_count=len(strip),
-                renderstate_args=first_rs_arg_ptr,
-                renderstate_args_count=rs_arg_count))
+        for (material_idx, strips) in enumerate(material_strips):
+            for strip in strips:
+                # Create render state args
+                rs_arg_count = 0
+                first_rs_arg_ptr = NULLPTR
+                if has_textures:
+                    rs_args = make_renderstate_args(
+                        texture_ids[material_idx],
+                        blend_modes=(4, 7), # D3DBLEND_SRCALPHA, D3DBLEND_INVSRCALPHA
+                        texture_addressing=1,  # D3DTADDRESS_MIRROR
+                        lighting=False) # Map geometry is generally not affected by lighting
+                    rs_arg_count = len(rs_args)
+                    for rs_arg in rs_args:
+                        ptr = rel.write(rs_arg)
+                        if first_rs_arg_ptr == NULLPTR:
+                            first_rs_arg_ptr = ptr
+                # Write Indices
+                buf_ptr = rel.write(IndexBuffer(indices=strip), True)
+                index_buffer_containers.append(IndexBufferContainer(
+                    index_buffer=buf_ptr,
+                    index_count=len(strip),
+                    renderstate_args=first_rs_arg_ptr,
+                    renderstate_args_count=rs_arg_count))
 
-        # Containers need to be written back to back
+        # Index buffer containers need to be written back to back
         first_index_buffer_container_ptr = None
         for buf in index_buffer_containers:
             ptr = rel.write(buf)
             if first_index_buffer_container_ptr is None:
                 first_index_buffer_container_ptr = ptr
         # XXX: Let's just put everything here regardless of if it has alpha or not
-        mesh.alpha_index_buffer_count = len(strips)
+        mesh.alpha_index_buffer_count = len(index_buffer_containers)
         mesh.alpha_index_buffers = first_index_buffer_container_ptr
 
         mesh_node.mesh = rel.write(mesh)
