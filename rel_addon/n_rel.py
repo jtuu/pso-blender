@@ -239,6 +239,8 @@ def write(nrel_path: str, xvm_path: str, objects: list[bpy.types.Object]):
             # Despite the names of the types, they appear to be identical
             if vertex_colors.data_type != "FLOAT_COLOR" and vertex_colors.data_type != "BYTE_COLOR":
                 raise Exception("N.REL Error: Invalid vertex color format \"{}\"".format(vertex_colors.data_type))
+            if vertex_colors.domain != "CORNER":
+                raise Exception("N.REL Error: Invalid vertex color type \"{}\". Please select \"Face Corner\" when creating color attribute.".format(vertex_colors.domain))
             if len(vertex_colors.data) != len(blender_mesh.loop_triangles) * 3:
                 raise Exception("N.REL Error: Vertex color data length mismatch. Remember to triangulate your mesh before painting.")
 
