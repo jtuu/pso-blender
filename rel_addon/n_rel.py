@@ -1,5 +1,6 @@
 import os, sys, math
 from dataclasses import dataclass, field
+from warnings import warn
 import bpy.types
 from .rel import Rel
 from .serialization import Serializable, Numeric
@@ -261,13 +262,19 @@ def write(nrel_path: str, xvm_path: str, objects: list[bpy.types.Object]):
                 raise NrelError("Vertex color data length mismatch. Remember to triangulate your mesh before painting.", obj)
 
         if tex_image:
-            # Deduplicate textures
-            image_abs_path = tex_image.filepath_from_user()
-            if image_abs_path in textures:
-                texture_id = textures[image_abs_path].id
+            w, h = tex_image.size
+            # If the image file is not found on disk the texture will still exist but without pixels
+            if w == 0 or h == 0:
+                warn("N.REL Warning: Texture '{}' has no pixels. Does the image file exist on disk?".format(tex_image.filepath))
+                tex_image = None
             else:
-                texture_id += 1
-                textures[image_abs_path] = xvm.Texture(id=texture_id, image=tex_image)
+                # Deduplicate textures
+                image_abs_path = tex_image.filepath_from_user()
+                if image_abs_path in textures:
+                    texture_id = textures[image_abs_path].id
+                else:
+                    texture_id += 1
+                    textures[image_abs_path] = xvm.Texture(id=texture_id, image=tex_image)
 
         # Vertices. Only one buffer needed.
         # Figure out the right vertex format based on what data mesh has.
