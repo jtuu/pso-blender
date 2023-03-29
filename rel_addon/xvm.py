@@ -16,6 +16,28 @@ Ptr32 = Numeric.Ptr32
 NULLPTR = Numeric.NULLPTR
 
 
+class XvrFormat:
+    A8R8G8B8 = 1
+    R5G6B5 = 2
+    A1R5G5B5 = 3
+    A4R4G4B4 = 4
+    P8 = 5
+    DXT1 = 6
+    DXT2 = 7
+    DXT3 = 8
+    DXT4 = 9
+    DXT5 = 10
+    A8R8G8B8 = 11
+    R5G6B5 = 12
+    A1R5G5B5 = 13
+    A4R4G4B4 = 14
+    YUY2 = 15
+    V8U8 = 16
+    A8 = 17
+    X1R5G5B5 = 18
+    X8R8G8B8 = 19
+
+
 @dataclass
 class Xvr(Serializable):
     magic: list[U8] = util.magic_field("XVRT")
@@ -56,12 +78,20 @@ def write(path: str, textures: list[Texture]):
     xvrs = []
     for tex in textures:
         width, height = tex.image.size
-        data = dxt.dxt1_compress(list(tex.image.pixels), width, height, tex.image.channels)
+        has_alpha = tex.image.channels == 4
+        if has_alpha:
+            if tex.image.alpha_mode != "STRAIGHT":
+                raise Exception("XVR Error: Image has unsupported alpha mode \"{}\"".format(tex.image.alpha_mode))
+            xvr_format = XvrFormat.DXT5
+            data = dxt.dxt5_compress_image(list(tex.image.pixels), width, height)
+        else:
+            xvr_format = XvrFormat.DXT1
+            data = dxt.dxt1_compress_image(list(tex.image.pixels), width, height)
         xvrs.append(Xvr(
             body_size=len(data) + Xvr.type_size() - 4,
             id=tex.id,
             format1=0,
-            format2=6,
+            format2=xvr_format,
             width=width,
             height=height,
             data_size=len(data),

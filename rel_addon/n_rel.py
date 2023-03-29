@@ -86,6 +86,10 @@ class RenderStateType:
     BLEND_MODE = 2
     TEXTURE_ID = 3
     TEXTURE_ADDRESSING = 4
+    MATERIAL = 5
+    LIGHTING = 6
+    TRANSFORM = 7
+    MATERIAL_SOURCE = 8
 
 
 @dataclass
@@ -112,8 +116,8 @@ class Mesh(Serializable):
     vertex_buffer_count: U32 = 0
     index_buffers: Ptr32 = NULLPTR # IndexBufferContainer
     index_buffer_count: U32 = 0
-    unk1: U32 = 0
-    unk2: U32 = 0
+    alpha_index_buffers: Ptr32 = NULLPTR # IndexBufferContainer
+    alpha_index_buffer_count: U32 = 0
 
 
 @dataclass
@@ -195,7 +199,7 @@ class NrelFmt2(Serializable):
     texture_data: Ptr32 = NULLPTR # TextureData1
 
 
-def make_renderstate_args(texture_id: int, *args, texture_addressing=None, blend_modes=None) -> list[RenderStateArgs]:
+def make_renderstate_args(texture_id: int, *args, texture_addressing=None, blend_modes=None, lighting=True) -> list[RenderStateArgs]:
     rs_args = [
         RenderStateArgs(
             state_type=RenderStateType.TEXTURE_ID,
@@ -210,6 +214,9 @@ def make_renderstate_args(texture_id: int, *args, texture_addressing=None, blend
             state_type=RenderStateType.TEXTURE_ADDRESSING,
             arg1=texture_addressing,
             arg2=texture_addressing))
+    rs_args.append(RenderStateArgs(
+        state_type=RenderStateType.LIGHTING,
+        arg1=int(lighting)))
     return rs_args
 
 
@@ -323,7 +330,11 @@ def write(nrel_path: str, xvm_path: str, objects: list[bpy.types.Object]):
         rs_arg_count = 0
         first_rs_arg_ptr = NULLPTR
         if tex_image:
-            rs_args = make_renderstate_args(texture_id)
+            rs_args = make_renderstate_args(
+                texture_id,
+                blend_modes=(4, 7), # D3DBLEND_SRCALPHA, D3DBLEND_INVSRCALPHA
+                texture_addressing=1,  # D3DTADDRESS_MIRROR
+                lighting=False) # Map geometry is generally not affected by lighting
             rs_arg_count = len(rs_args)
             for rs_arg in rs_args:
                 ptr = rel.write(rs_arg)
@@ -347,8 +358,9 @@ def write(nrel_path: str, xvm_path: str, objects: list[bpy.types.Object]):
             ptr = rel.write(buf)
             if first_index_buffer_container_ptr is None:
                 first_index_buffer_container_ptr = ptr
-        mesh.index_buffer_count = len(strips)
-        mesh.index_buffers = first_index_buffer_container_ptr
+        # XXX: Let's just put everything here regardless of if it has alpha or not
+        mesh.alpha_index_buffer_count = len(strips)
+        mesh.alpha_index_buffers = first_index_buffer_container_ptr
 
         mesh_node.mesh = rel.write(mesh)
         static_mesh_tree.root_node = rel.write(mesh_node)
