@@ -38,12 +38,17 @@ class XvrFormat:
     X8R8G8B8 = 19
 
 
+class XvrFlags:
+    MIPMAPS = 1
+    ALPHA = 2
+
+
 @dataclass
 class Xvr(Serializable):
     magic: list[U8] = util.magic_field("XVRT")
     body_size: U32 = 0
-    format1: U32 = 0
-    format2: U32 = 0
+    flags: U32 = 0
+    format: U32 = 0
     id: U32 = 0
     width: U16 = 0
     height: U16 = 0
@@ -65,6 +70,19 @@ class Xvm(Serializable):
     magic: list[U8] = util.magic_field("XVMH")
     body_size: U32 = 0
     xvr_count: U32 = 0
+    unk1: U32 = 0
+    unk2: U32 = 0
+    unk3: U32 = 0
+    unk4: U32 = 0
+    unk5: U32 = 0
+    unk6: U32 = 0
+    unk7: U32 = 0
+    unk8: U32 = 0
+    unk9: U32 = 0
+    unk10: U32 = 0
+    unk11: U32 = 0
+    unk12: U32 = 0
+    unk13: U32 = 0
     xvrs: list[Xvr] = field(default_factory=list)
 
 
@@ -79,9 +97,11 @@ def write(path: str, textures: list[Texture]):
     for tex in textures:
         width, height = tex.image.size
         has_alpha = tex.image.channels == 4
+        flags = 0
         if has_alpha:
             if tex.image.alpha_mode != "STRAIGHT":
-                raise Exception("XVR Error: Image has unsupported alpha mode \"{}\"".format(tex.image.alpha_mode))
+                raise Exception("XVR Error in Image '{}': Image has unsupported alpha mode '{}'".format(tex.image.filepath, tex.image.alpha_mode))
+            flags |= XvrFlags.ALPHA
             xvr_format = XvrFormat.DXT5
             data = dxt.dxt5_compress_image(list(tex.image.pixels), width, height)
         else:
@@ -90,8 +110,8 @@ def write(path: str, textures: list[Texture]):
         xvrs.append(Xvr(
             body_size=len(data) + Xvr.type_size() - 4,
             id=tex.id,
-            format1=0,
-            format2=xvr_format,
+            flags=flags,
+            format=xvr_format,
             width=width,
             height=height,
             data_size=len(data),
