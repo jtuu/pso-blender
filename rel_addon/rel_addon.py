@@ -1,4 +1,5 @@
 import os
+from warnings import catch_warnings
 import bpy
 from bpy_extras.io_utils import ExportHelper
 from bpy.props import StringProperty, EnumProperty
@@ -108,11 +109,16 @@ class ExportRel(Operator, ExportHelper):
         return self.export_all(minimap_objs, render_objs, collision_objs)
 
     def execute(self, context):
-        if "EXPORT_SELECTED" in self.export_strategy:
-            return self.export_selected()
-        elif "EXPORT_BY_TAGS" in self.export_strategy:
-            return self.export_all_by_tags()
-        return self.cancel_with_warning("REL export error: Invalid export settings")
+        with catch_warnings(record=True) as warnings:
+            result = {"CANCELLED"}
+            if "EXPORT_SELECTED" in self.export_strategy:
+                result = self.export_selected()
+            elif "EXPORT_BY_TAGS" in self.export_strategy:
+                result = self.export_all_by_tags()
+            # Display warnings in the GUI
+            for warning in warnings:
+                self.report({"WARNING"}, str(warning.message))
+            return result
     
     def draw(self, context):
         pass
