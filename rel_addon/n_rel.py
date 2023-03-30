@@ -1,4 +1,4 @@
-import os, sys, math
+import os, math
 from dataclasses import dataclass, field
 from warnings import warn
 import bpy.types
@@ -404,9 +404,9 @@ def write(nrel_path: str, xvm_path: str, objects: list[bpy.types.Object]):
         first_texdata2_ptr = NULLPTR
         tex_data1 = TextureData1(data_count=len(textures))
         for tex_path in textures:
-            # Create a unique name for the texture without needing to write the entire absolute path in the file
+            # There might be a limit on the length of these
             (dirname, basename) = os.path.split(tex_path)
-            tex_name = "tex_" + str(hash(dirname) + sys.maxsize + 1) + "_" + basename
+            tex_name = basename[0:10]
             name_ptr = rel.write(AlignedString(tex_name))
             ptr = rel.write(TextureData2(name=name_ptr))
             if first_texdata2_ptr == NULLPTR:
