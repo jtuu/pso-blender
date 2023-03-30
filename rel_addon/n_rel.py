@@ -121,10 +121,23 @@ class Mesh(Serializable):
     alpha_index_buffer_count: U32 = 0
 
 
+class NinjaEvalFlag:
+    UNIT_POS = 0b1 # Ignore translation
+    UNIT_ANG = 0b10 # Ignore rotation
+    UNIT_SCL = 0b100 # Ignore scaling
+    HIDE = 0b1000 # Do not draw model
+    BREAK = 0b10000 # Terimnate tracing children
+    ZXY_ANG = 0b100000
+    SKIP = 0b1000000
+    SHAPE_SKIP = 0b10000000
+    CLIP = 0b100000000
+    MODIFIER = 0b1000000000
+
+
 @dataclass
 class MeshTreeNode(Serializable):
     """Guessing the point of this is to have hierarchical transformations"""
-    flags: U32 = 0
+    eval_flags: U32 = 0
     mesh: Ptr32 = NULLPTR # Mesh
     x: F32 = 0.0
     y: F32 = 0.0
@@ -139,12 +152,16 @@ class MeshTreeNode(Serializable):
     next: Ptr32 = NULLPTR # MeshTreeNode
 
 
+class MeshTreeFlag:
+    RECEIVES_SHADOWS = 0x10
+
+
 @dataclass
 class MeshTree(Serializable):
     root_node: Ptr32 = NULLPTR # MeshTreeNode
     unk1: U32 = 0
     unk2: U32 = 0
-    flags: U32 = 0
+    tree_flags: U32 = 0
 
 
 @dataclass
@@ -245,8 +262,9 @@ def write(nrel_path: str, xvm_path: str, objects: list[bpy.types.Object]):
     # Build mesh tree
     for obj in objects:
         blender_mesh = obj.to_mesh()
-        static_mesh_tree = MeshTree(flags=0x00220000)
-        mesh_node = MeshTreeNode(flags=0x17, scale_x=1.0, scale_y=1.0, scale_z=1.0)
+        static_mesh_tree = MeshTree(tree_flags=MeshTreeFlag.RECEIVES_SHADOWS)
+        mesh_node = MeshTreeNode(
+            eval_flags=NinjaEvalFlag.UNIT_POS | NinjaEvalFlag.UNIT_ANG | NinjaEvalFlag.UNIT_SCL | NinjaEvalFlag.BREAK)
         tex_images = util.get_object_diffuse_textures(obj)
         has_textures = len(tex_images) > 0
         geom_center = util.geometry_world_center(obj)
