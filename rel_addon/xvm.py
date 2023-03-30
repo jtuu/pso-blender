@@ -102,11 +102,8 @@ def write(path: str, textures: list[Texture]):
             if tex.image.alpha_mode != "STRAIGHT":
                 raise Exception("XVR Error in Image '{}': Image has unsupported alpha mode '{}'".format(tex.image.filepath, tex.image.alpha_mode))
             flags |= XvrFlags.ALPHA
-            xvr_format = XvrFormat.DXT5
-            data = dxt.dxt5_compress_image(list(tex.image.pixels), width, height)
-        else:
-            xvr_format = XvrFormat.DXT1
-            data = dxt.dxt1_compress_image(list(tex.image.pixels), width, height)
+        xvr_format = XvrFormat.DXT1
+        data = dxt.compress_image(list(tex.image.pixels), width, height, tex.image.channels, has_alpha)
         xvrs.append(Xvr(
             body_size=len(data) + Xvr.type_size() - 4,
             id=tex.id,
