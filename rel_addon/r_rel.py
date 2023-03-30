@@ -3,7 +3,7 @@ from dataclasses import dataclass, field
 import bpy.types
 from .rel import Rel
 from .serialization import Serializable, Numeric
-from . import util
+from . import util, tristrip
 
 
 U8 = Numeric.U8
@@ -118,7 +118,7 @@ def write(path: str, room_objects: list[bpy.types.Object]):
                 x=world_vert[0], y=world_vert[1], z=world_vert[2],
                 nx=0.0, ny=1.0, nz=0.0))
         room.discovery_radius = math.sqrt(farthest_sq)
-        strips = util.stripify(faces)
+        strips = tristrip.stripify(faces, stitchstrips=True)
 
         container = MeshContainer()
         mesh = Mesh(

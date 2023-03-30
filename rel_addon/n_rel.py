@@ -4,7 +4,7 @@ from warnings import warn
 import bpy.types
 from .rel import Rel
 from .serialization import Serializable, Numeric
-from . import util, xvm
+from . import util, xvm, tristrip
 
 
 U8 = Numeric.U8
@@ -345,12 +345,12 @@ def write(nrel_path: str, xvm_path: str, objects: list[bpy.types.Object]):
             for face in blender_mesh.loop_triangles:
                 material_faces[face.material_index].append(tuple(face.loops))
             for faces in material_faces:
-                material_strips.append(util.stripify(faces))
+                material_strips.append(tristrip.stripify(faces, stitchstrips=True))
         else:
             faces = []
             for face in blender_mesh.loop_triangles:
                 faces.append(tuple(face.loops))
-            material_strips.append(util.stripify(faces))
+            material_strips.append(tristrip.stripify(faces, stitchstrips=True))
 
         # Indices. One buffer per strip.
         index_buffer_containers = []

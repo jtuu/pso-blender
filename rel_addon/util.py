@@ -2,8 +2,6 @@ import math
 from mathutils import Vector
 import bpy.types 
 from dataclasses import field
-from .trianglestripifier import TriangleStripifier
-from . import trianglemesh
 
 
 def mesh_faces(mesh: bpy.types.Mesh) -> list[tuple[int, int, int]]:
@@ -25,22 +23,6 @@ def get_object_diffuse_textures(obj: bpy.types.Object) -> list[bpy.types.Image]:
                 textures.append(node.image)
                 break
     return textures
-
-
-def stripify(triangles):
-    # Convert to pyffi Mesh
-    mesh = trianglemesh.Mesh()
-    for face in triangles:
-        try:
-            mesh.add_face(*face)
-        except ValueError:
-            # degenerate face
-            pass
-    mesh.lock()
-
-    # Compute strips
-    stripifier = TriangleStripifier(mesh)
-    return stripifier.find_all_strips()
 
 
 def magic_bytes(s: str) -> list[int]:
