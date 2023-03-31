@@ -2,7 +2,12 @@ import bpy
 from bpy.props import PointerProperty
 from bpy.app.handlers import persistent, load_post
 from .export_menu import ExportRel, CUSTOM_PT_export_settings
-from .properties_menu import MeshRelSettings, MeshRelSettingsPanel
+from .properties_menu import (
+    MeshRelSettings,
+    MeshRelSettingsPanel,
+    MeshNrelSettingsPanel,
+    MeshCrelSettingsPanel,
+    MeshRrelSettingsPanel)
 
 
 @persistent
@@ -24,20 +29,27 @@ def menu_func_export(self, context):
     self.layout.operator(ExportRel.bl_idname, text="Export RELs (PSO)")
 
 
+classes = [
+    ExportRel,
+    CUSTOM_PT_export_settings,
+    MeshRelSettings,
+    MeshRelSettingsPanel,
+    MeshNrelSettingsPanel,
+    MeshCrelSettingsPanel,
+    MeshRrelSettingsPanel
+]
+
+
 # Register and add to the "file selector" menu
 def register():
-    bpy.utils.register_class(ExportRel)
-    bpy.utils.register_class(CUSTOM_PT_export_settings)
+    for clazz in classes:
+        bpy.utils.register_class(clazz)
     bpy.types.TOPBAR_MT_file_export.append(menu_func_export)
-    bpy.utils.register_class(MeshRelSettings)
-    bpy.utils.register_class(MeshRelSettingsPanel)
     bpy.types.Object.rel_settings = PointerProperty(type=MeshRelSettings)
 
 
 def unregister():
-    bpy.utils.unregister_class(ExportRel)
-    bpy.utils.unregister_class(CUSTOM_PT_export_settings)
+    for clazz in classes:
+        bpy.utils.unregister_class(clazz)
     bpy.types.TOPBAR_MT_file_export.remove(menu_func_export)
-    bpy.utils.unregister_class(MeshRelSettings)
-    bpy.utils.unregister_class(MeshRelSettingsPanel)
     del bpy.types.Object.rel_settings

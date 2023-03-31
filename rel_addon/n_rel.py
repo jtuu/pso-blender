@@ -262,7 +262,10 @@ def write(nrel_path: str, xvm_path: str, objects: list[bpy.types.Object]):
     # Build mesh tree
     for obj in objects:
         blender_mesh = obj.to_mesh()
-        static_mesh_tree = MeshTree(tree_flags=MeshTreeFlag.RECEIVES_SHADOWS)
+        tree_flags = 0
+        if obj.rel_settings.receives_shadows:
+            tree_flags |= MeshTreeFlag.RECEIVES_SHADOWS
+        static_mesh_tree = MeshTree(tree_flags=tree_flags)
         mesh_node = MeshTreeNode(
             eval_flags=NinjaEvalFlag.UNIT_POS | NinjaEvalFlag.UNIT_ANG | NinjaEvalFlag.UNIT_SCL | NinjaEvalFlag.BREAK)
         tex_images = util.get_object_diffuse_textures(obj)
