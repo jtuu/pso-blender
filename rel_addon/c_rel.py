@@ -101,7 +101,12 @@ def write(path: str, objects: list[bpy.types.Object]):
         first_face_ptr = None
         for face in blender_mesh.loop_triangles:
             indices = face.vertices
-            normal = util.from_blender_axes(face.normal)
+            normal = util.from_blender_axes(face.normal, False)
+            # For some reason the x and z of the normal need to be swapped
+            x = normal[0]
+            z = normal[2]
+            normal[0] = z
+            normal[2] = x
             # Find distance of farthest vertex from center
             center = util.from_blender_axes(obj.matrix_world @ face.center)
             farthest_sq = max(map(lambda vi: util.distance_squared(vertex_array.vertices[vi].as_vector().xz, center.xz), face.vertices))
