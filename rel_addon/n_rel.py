@@ -212,7 +212,7 @@ class NrelFmt2(Serializable):
     unk1: U32 = 0
     chunk_count: U16 = 0
     unk2: U16 = 0
-    unk3: U32 = 0
+    radius: F32 = 0.0
     chunks: Ptr32 = NULLPTR # Chunk
     texture_data: Ptr32 = NULLPTR # TextureData1
 
@@ -329,7 +329,7 @@ def write(nrel_path: str, xvm_path: str, objects: list[bpy.types.Object]):
             for (vert_idx, loop_idx) in zip(face.vertices, face.loops):
                 local_vert = blender_mesh.vertices[vert_idx]
                 world_vert = util.from_blender_axes(obj.matrix_world @ local_vert.co)
-                farthest_sq = max(farthest_sq, util.distance_squared(geom_center, world_vert))
+                farthest_sq = max(farthest_sq, util.distance_squared(geom_center.xz, world_vert.xz))
                 vertex = vertex_ctor(
                     x=world_vert[0],
                     y=world_vert[1],
@@ -412,7 +412,7 @@ def write(nrel_path: str, xvm_path: str, objects: list[bpy.types.Object]):
         mesh_node.mesh = rel.write(mesh)
         static_mesh_tree.root_node = rel.write(mesh_node)
         static_mesh_trees.append(static_mesh_tree)
-    chunk.radius = math.sqrt(farthest_sq)
+    nrel.radius = chunk.radius = math.sqrt(farthest_sq)
     first_static_mesh_tree_ptr = None
     for tree in static_mesh_trees:
         ptr = rel.write(tree)
