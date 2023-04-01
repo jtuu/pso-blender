@@ -100,6 +100,10 @@ def write(path: str, objects: list[bpy.types.Object]):
         # Write faces
         first_face_ptr = None
         for face in blender_mesh.loop_triangles:
+            # Apply world rotation and scale transforms to normal
+            normal = face.normal.to_4d()
+            normal.w = 0
+            normal = util.from_blender_axes((obj.matrix_world @ normal).to_3d())
             indices = face.vertices
             normal = util.from_blender_axes(face.normal, False)
             # For some reason the x and z of the normal need to be swapped
