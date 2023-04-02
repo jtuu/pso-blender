@@ -8,6 +8,7 @@ class MeshRelSettings(bpy.types.PropertyGroup):
     is_crel: BoolProperty(name="C.REL")
     is_rrel: BoolProperty(name="R.REL")
     receives_shadows: BoolProperty(name="Receives shadows", default=True)
+    is_chunk: BoolProperty(name="Chunk marker", description="Object is used as a chunk marker. All meshes are automatically assigned to the nearest chunk marker.", default=False)
 
 
 class MeshNrelSettingsPanel(Panel):
@@ -27,6 +28,8 @@ class MeshNrelSettingsPanel(Panel):
         self.layout.prop(context.object.rel_settings, "is_nrel", text="")
     
     def draw(self, context):
+        self.layout.use_property_split = True
+        self.layout.use_property_decorate = False
         settings = context.object.rel_settings
         self.layout.active = settings.is_nrel
         row = self.layout.row()
@@ -50,6 +53,8 @@ class MeshCrelSettingsPanel(Panel):
         self.layout.prop(context.object.rel_settings, "is_crel", text="")
     
     def draw(self, context):
+        self.layout.use_property_split = True
+        self.layout.use_property_decorate = False
         settings = context.object.rel_settings
         self.layout.active = settings.is_crel
         self.layout.label(text="Nothing here yet")
@@ -89,4 +94,7 @@ class MeshRelSettingsPanel(Panel):
         return context.object.type == "MESH"
     
     def draw(self, context):
-        pass
+        self.layout.use_property_split = True
+        self.layout.use_property_decorate = False
+        settings = context.object.rel_settings
+        self.layout.prop(settings, "is_chunk")

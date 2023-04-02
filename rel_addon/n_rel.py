@@ -1,4 +1,5 @@
 import os, math
+from mathutils import Vector
 from dataclasses import dataclass, field
 from warnings import warn
 import bpy.types
@@ -181,6 +182,11 @@ class Chunk(Serializable):
     animated_mesh_tree_count: U32 = 0
     flags: U32 = 0
 
+    def __hash__(self):
+        return self.id
+
+    def __eq__(self, other):
+        return self.id == other.id
 
 class AlignedString(Serializable):
     chars: list[U8] = field(default_factory=list)
@@ -212,7 +218,7 @@ class NrelFmt2(Serializable):
     unk1: U32 = 0
     chunk_count: U16 = 0
     unk2: U16 = 0
-    radius: F32 = 0.0
+    radius: F32 = 0.0 # Overwritten at runtime
     chunks: Ptr32 = NULLPTR # Chunk
     texture_data: Ptr32 = NULLPTR # TextureData1
 
@@ -239,187 +245,281 @@ def make_renderstate_args(texture_id: int, *args, texture_addressing=None, blend
 
 
 class NrelError(Exception):
-    def __init__(self, msg: str, obj: bpy.types.Object=None):
+    def __init__(self, msg: str, *args, obj: bpy.types.Object=None, texture: bpy.types.Image=None):
         s = "N.REL Error"
         if obj:
             s += " in Object '{}'".format(obj.name)
+        elif texture:
+            s += " in Texture '{}'".format(texture.filepath)
         s += ": " + msg
         super().__init__(s)
 
 
-def write(nrel_path: str, xvm_path: str, objects: list[bpy.types.Object]):
+def assign_objects_to_chunks(objects: list[bpy.types.Object], chunk_markers: list[bpy.types.Object]) -> dict[Chunk, list[bpy.types.Object]]:
+    max_chunk_radius = 1200 # Approximation based on lowest value used by game
+    chunk_to_children = dict()
+    chunk_flags = 0x00010000
+    chunk_counter = 0
+    if len(chunk_markers) < 1:
+        # No markers, put all meshes in the same chunk at 0,0,0
+        warn("N.REL Warning: No chunk markers found in scene. Placing all meshes in default chunk.")
+        chunk = Chunk(
+            id=chunk_counter,
+            flags=chunk_flags,
+            static_mesh_tree_count=len(objects),
+            x=0.0,
+            y=0.0,
+            z=0.0)
+        chunk_to_children[chunk] = objects
+    else:
+        # Create a chunk for each marker
+        for marker in chunk_markers:
+            marker_center = util.from_blender_axes(marker.location)
+            chunk = Chunk(
+                id=chunk_counter,
+                flags=chunk_flags,
+                radius=float("-inf"),
+                x=marker_center.x,
+                y=0.0,
+                z=marker_center.z)
+            chunk_to_children[chunk] = []
+            chunk_counter += 1
+        # Find each object's nearest chunk
+        for obj in objects:
+            obj_center = util.from_blender_axes(obj.location)
+            nearest_chunk = None
+            nearest_dist_sq = float("inf")
+            for chunk in chunk_to_children:
+                dist_sq = util.distance_squared(obj_center.xz, Vector((chunk.x, 0.0, chunk.z)).xz)
+                if dist_sq < nearest_dist_sq:
+                    nearest_dist_sq = dist_sq
+                    nearest_chunk = chunk
+            # Add object to chunk
+            chunk_to_children[nearest_chunk].append(obj)
+            nearest_chunk.static_mesh_tree_count += 1
+            # Also calculate chunk radius. Ensure object is definitely within radius by adding its greatest XZ dimension.
+            greatest_obj_dim = max(obj.dimensions.xz)
+            radius = math.sqrt(nearest_dist_sq) + greatest_obj_dim
+            if radius > nearest_chunk.radius:
+                nearest_chunk.radius = radius
+                if radius > max_chunk_radius:
+                    warn("N.REL Warning: Object '{}' might be too far away from a chunk marker (expected maximum distance of {:.1f}, was {:.1}).".format(
+                        obj.name, max_chunk_radius, radius))
+        # Discard empty chunks
+        for chunk in list(chunk_to_children.keys()):
+            if chunk.static_mesh_tree_count < 1:
+                del chunk_to_children[chunk]
+    return chunk_to_children
+
+
+def create_or_find_textures(existing_textures: dict[str, xvm.Texture], tex_images: list[bpy.types.Image]) -> list[int]:
+    # Init counter as a "static" variable
+    if "counter" not in create_or_find_textures.__dict__:
+        create_or_find_textures.counter = 0
+    
+    texture_ids = []
+    for tex_image in tex_images:
+        w, h = tex_image.size
+        # If the image file is not found on disk the texture will still exist but without pixels
+        if w == 0 or h == 0 or len(tex_image.pixels) < 1:
+            raise NrelError("Texture has no pixels. Does the image file exist on disk?", texture=tex_image)
+        else:
+            # Deduplicate textures
+            image_abs_path = tex_image.filepath_from_user()
+            if image_abs_path in existing_textures:
+                texture_ids.append(existing_textures[image_abs_path].id)
+            else:
+                texture_ids.append(create_or_find_textures.counter)
+                existing_textures[image_abs_path] = xvm.Texture(id=create_or_find_textures.counter, image=tex_image)
+                create_or_find_textures.counter += 1
+    return texture_ids
+
+
+def determine_vertex_format(has_textures: bool, has_vertex_colors: bool):
+    # Figure out the right vertex format based on what data mesh has.
+    if has_textures:
+        if has_vertex_colors:
+            # Coords + color + UVs
+            vertex_format = 5
+            vertex_size = VertexFormat5.type_size()
+            vertex_buffer = VertexBufferFormat5()
+            vertex_ctor = VertexFormat5
+        else:
+            # Coords + UVs
+            vertex_format = 1
+            vertex_size = VertexFormat1.type_size()
+            vertex_buffer = VertexBufferFormat1()
+            vertex_ctor = VertexFormat1
+    else:
+        # Coords + color
+        vertex_format = 4
+        vertex_size = VertexFormat4.type_size()
+        vertex_buffer = VertexBufferFormat4()
+        vertex_ctor = VertexFormat4
+    return (vertex_format, vertex_size, vertex_buffer, vertex_ctor)
+
+
+def write_vertex_buffer(rel: Rel, obj: bpy.types.Object, blender_mesh: bpy.types.Mesh, nrel_mesh: Mesh, has_textures: bool, vertex_colors):
+    # One vertex per loop
+    (vertex_format, vertex_size, vertex_buffer, vertex_ctor) = determine_vertex_format(has_textures, bool(vertex_colors))
+    vertex_buffer.vertices = [None] * len(blender_mesh.loops)
+    for face in blender_mesh.loop_triangles:
+        for (vert_idx, loop_idx) in zip(face.vertices, face.loops):
+            # Exclude translation from transform
+            local_vert = blender_mesh.vertices[vert_idx]
+            world_vert = obj.matrix_world @ local_vert.co
+            world_vert = local_vert.co.to_4d()
+            world_vert.w = 0
+            world_vert = util.from_blender_axes((obj.matrix_world @ world_vert).to_3d())
+            vertex = vertex_ctor(
+                x=world_vert[0],
+                y=world_vert[1],
+                z=world_vert[2])
+            vertex_buffer.vertices[loop_idx] = vertex
+            # Get UVs
+            if has_textures:
+                u, v = blender_mesh.uv_layers[0].data[loop_idx].uv
+                vertex.u = u
+                vertex.v = v
+            # Get colors
+            # Assume faces were triangulated when painting and vertex color array aligns with loops
+            if vertex_colors:
+                col = vertex_colors.data[loop_idx].color
+                # BGRA
+                # Need to clamp because light baking can cause values to go higher than normal
+                vertex.diffuse.b = int(util.clamp(col[0], 0.0, 1.0) * 0xff)
+                vertex.diffuse.g = int(util.clamp(col[1], 0.0, 1.0) * 0xff)
+                vertex.diffuse.r = int(util.clamp(col[2], 0.0, 1.0) * 0xff)
+                vertex.diffuse.a = int(util.clamp(col[3], 0.0, 1.0) * 0xff)
+    # Put all vertices in one buffer
+    nrel_mesh.vertex_buffer_count = 1
+    nrel_mesh.vertex_buffers = rel.write(VertexBufferContainer(
+        vertex_format=vertex_format,
+        vertex_buffer=rel.write(vertex_buffer),
+        vertex_size=vertex_size,
+        vertex_count=len(vertex_buffer.vertices)))
+
+
+def create_tristrips_grouped_by_material(obj: bpy.types.Object, blender_mesh: bpy.types.Mesh, has_textures: bool) -> list[list[list[int]]]:
+    material_strips = []
+    if has_textures:
+        material_faces = []
+        for i in range(len(obj.material_slots)):
+            material_faces.append([])
+        for face in blender_mesh.loop_triangles:
+            material_faces[face.material_index].append(tuple(face.loops))
+        for faces in material_faces:
+            material_strips.append(tristrip.stripify(faces, stitchstrips=True))
+    else:
+        faces = []
+        for face in blender_mesh.loop_triangles:
+            faces.append(tuple(face.loops))
+        material_strips.append(tristrip.stripify(faces, stitchstrips=True))
+    return material_strips
+
+
+def write_index_buffers(rel: Rel, nrel_mesh: Mesh, material_strips: list[list[list[int]]], texture_ids: list[int]):
+    # One buffer per strip
+    index_buffer_containers = []
+    for (material_idx, strips) in enumerate(material_strips):
+        for strip in strips:
+            # Create render state args
+            rs_arg_count = 0
+            first_rs_arg_ptr = NULLPTR
+            if len(texture_ids) > 0:
+                rs_args = make_renderstate_args(
+                    texture_ids[material_idx],
+                    blend_modes=(4, 7), # D3DBLEND_SRCALPHA, D3DBLEND_INVSRCALPHA
+                    texture_addressing=1,  # D3DTADDRESS_MIRROR
+                    lighting=False) # Map geometry is generally not affected by lighting
+                rs_arg_count = len(rs_args)
+                for rs_arg in rs_args:
+                    ptr = rel.write(rs_arg)
+                    if first_rs_arg_ptr == NULLPTR:
+                        first_rs_arg_ptr = ptr
+            # Write Indices
+            buf_ptr = rel.write(IndexBuffer(indices=strip), True)
+            index_buffer_containers.append(IndexBufferContainer(
+                index_buffer=buf_ptr,
+                index_count=len(strip),
+                renderstate_args=first_rs_arg_ptr,
+                renderstate_args_count=rs_arg_count))
+    # Index buffer containers need to be written back to back
+    first_index_buffer_container_ptr = None
+    for buf in index_buffer_containers:
+        ptr = rel.write(buf)
+        if first_index_buffer_container_ptr is None:
+            first_index_buffer_container_ptr = ptr
+    # XXX: Let's just put everything here regardless of if it has alpha or not
+    nrel_mesh.alpha_index_buffer_count = len(index_buffer_containers)
+    nrel_mesh.alpha_index_buffers = first_index_buffer_container_ptr
+
+
+def write(nrel_path: str, xvm_path: str, objects: list[bpy.types.Object], chunk_markers: list[bpy.types.Object]):
     rel = Rel()
     nrel = NrelFmt2()
     textures = dict()
-    texture_id_counter = -1
-    # Put all meshes in one chunk because I don't know how chunks are supposed to work exactly
-    nrel.chunk_count = 1
-    chunk = Chunk(
-        flags=0x00010000,
-        static_mesh_tree_count=len(objects))
-    farthest_sq = float("-inf")
-    static_mesh_trees = []
-    # Build mesh tree
-    for obj in objects:
-        blender_mesh = obj.to_mesh()
-        tree_flags = 0
-        if obj.rel_settings.receives_shadows:
-            tree_flags |= MeshTreeFlag.RECEIVES_SHADOWS
-        static_mesh_tree = MeshTree(tree_flags=tree_flags)
-        mesh_node = MeshTreeNode(
-            eval_flags=NinjaEvalFlag.UNIT_POS | NinjaEvalFlag.UNIT_ANG | NinjaEvalFlag.UNIT_SCL | NinjaEvalFlag.BREAK)
-        tex_images = util.get_object_diffuse_textures(obj)
-        has_textures = len(tex_images) > 0
-        geom_center = util.geometry_world_center(obj)
-        mesh = Mesh(vertex_buffer_count=1)
+    # Create chunks
+    chunk_to_children = assign_objects_to_chunks(objects, chunk_markers)
+    nrel.chunk_count = len(chunk_to_children)
+    # Create chunk data.
+    # Chunk coords are world, MeshNodes are local to chunks, mesh vertices are local to MeshNode
+    for chunk in chunk_to_children:
+        chunk_world_pos = Vector((chunk.x, chunk.y, chunk.z))
+        chunk_objects = chunk_to_children[chunk]
+        static_mesh_trees = []
+        for obj in chunk_objects:
+            blender_mesh = obj.to_mesh()
+            # One mesh per tree. Create tree, a node, and the mesh.
+            tree_flags = 0
+            if obj.rel_settings.receives_shadows:
+                tree_flags |= MeshTreeFlag.RECEIVES_SHADOWS
+            static_mesh_tree = MeshTree(tree_flags=tree_flags)
 
-        vertex_colors = blender_mesh.color_attributes[0] if len(blender_mesh.color_attributes) > 0 else None
-        if vertex_colors:
-            # Despite the names of the types, they appear to be identical
-            if vertex_colors.data_type != "FLOAT_COLOR" and vertex_colors.data_type != "BYTE_COLOR":
-                raise NrelError("Invalid vertex color format '{}'.".format(vertex_colors.data_type), obj)
-            if vertex_colors.domain != "CORNER":
-                raise NrelError("Invalid vertex color type '{}'. Please select 'Face Corner' when creating color attribute.".format(vertex_colors.domain), obj)
-            if len(vertex_colors.data) != len(blender_mesh.loop_triangles) * 3:
-                raise NrelError("Vertex color data length mismatch. Remember to triangulate your mesh before painting.", obj)
+            mesh_world_pos = util.from_blender_axes(obj.location)
+            mesh_node = MeshTreeNode(
+                eval_flags=NinjaEvalFlag.UNIT_ANG | NinjaEvalFlag.UNIT_SCL | NinjaEvalFlag.BREAK,
+                # Make coords relative to chunk
+                x=mesh_world_pos.x - chunk_world_pos.x,
+                y=mesh_world_pos.y - chunk_world_pos.y,
+                z=mesh_world_pos.z - chunk_world_pos.z)
+            mesh = Mesh()
 
-        # Get texture identifiers
-        texture_ids = []
-        for tex_image in tex_images:
-            w, h = tex_image.size
-            # If the image file is not found on disk the texture will still exist but without pixels
-            if w == 0 or h == 0:
-                warn("N.REL Warning: Texture '{}' has no pixels. Does the image file exist on disk?".format(tex_image.filepath))
-                tex_image = None
-            else:
-                # Deduplicate textures
-                image_abs_path = tex_image.filepath_from_user()
-                if image_abs_path in textures:
-                    texture_ids.append(textures[image_abs_path].id)
-                else:
-                    texture_id_counter += 1
-                    texture_ids.append(texture_id_counter)
-                    textures[image_abs_path] = xvm.Texture(id=texture_id_counter, image=tex_image)
+            tex_images = util.get_object_diffuse_textures(obj)
+            has_textures = len(tex_images) > 0
 
-        # Vertices. Only one buffer needed.
-        # Figure out the right vertex format based on what data mesh has.
-        if has_textures:
-            if vertex_colors:
-                # Coords + color + UVs
-                vertex_format = 5
-                vertex_size = VertexFormat5.type_size()
-                vertex_buffer = VertexBufferFormat5()
-                vertex_ctor = VertexFormat5
-            else:
-                # Coords + UVs
-                vertex_format = 1
-                vertex_size = VertexFormat1.type_size()
-                vertex_buffer = VertexBufferFormat1()
-                vertex_ctor = VertexFormat1
-        else:
-            # Coords + color
-            vertex_format = 4
-            vertex_size = VertexFormat4.type_size()
-            vertex_buffer = VertexBufferFormat4()
-            vertex_ctor = VertexFormat4
-
-        # Create vertices. One vertex per loop.
-        vertex_buffer.vertices = [None] * len(blender_mesh.loops)
-        for face in blender_mesh.loop_triangles:
-            for (vert_idx, loop_idx) in zip(face.vertices, face.loops):
-                local_vert = blender_mesh.vertices[vert_idx]
-                world_vert = util.from_blender_axes(obj.matrix_world @ local_vert.co)
-                farthest_sq = max(farthest_sq, util.distance_squared(geom_center.xz, world_vert.xz))
-                vertex = vertex_ctor(
-                    x=world_vert[0],
-                    y=world_vert[1],
-                    z=world_vert[2])
-                vertex_buffer.vertices[loop_idx] = vertex
-                # Get UVs
-                if has_textures:
-                    u, v = blender_mesh.uv_layers[0].data[loop_idx].uv
-                    vertex.u = u
-                    vertex.v = v
-                # Get colors
-                # Assume faces were triangulated when painting and vertex color array aligns with loops
-                if vertex_colors:
-                    col = vertex_colors.data[loop_idx].color
-                    # BGRA
-                    # Need to clamp because light baking can cause values to go higher than normal
-                    vertex.diffuse.b = int(util.clamp(col[0], 0.0, 1.0) * 0xff)
-                    vertex.diffuse.g = int(util.clamp(col[1], 0.0, 1.0) * 0xff)
-                    vertex.diffuse.r = int(util.clamp(col[2], 0.0, 1.0) * 0xff)
-                    vertex.diffuse.a = int(util.clamp(col[3], 0.0, 1.0) * 0xff)
-        # Put all vertices in one buffer
-        mesh.vertex_buffers = rel.write(VertexBufferContainer(
-            vertex_format=vertex_format,
-            vertex_buffer=rel.write(vertex_buffer),
-            vertex_size=vertex_size,
-            vertex_count=len(vertex_buffer.vertices)))
-
-        # Group faces by material
-        material_strips = []
-        if has_textures:
-            material_faces = []
-            for i in range(len(obj.material_slots)):
-                material_faces.append([])
-            for face in blender_mesh.loop_triangles:
-                material_faces[face.material_index].append(tuple(face.loops))
-            for faces in material_faces:
-                material_strips.append(tristrip.stripify(faces, stitchstrips=True))
-        else:
-            faces = []
-            for face in blender_mesh.loop_triangles:
-                faces.append(tuple(face.loops))
-            material_strips.append(tristrip.stripify(faces, stitchstrips=True))
-
-        # Indices. One buffer per strip.
-        index_buffer_containers = []
-        for (material_idx, strips) in enumerate(material_strips):
-            for strip in strips:
-                # Create render state args
-                rs_arg_count = 0
-                first_rs_arg_ptr = NULLPTR
-                if has_textures:
-                    rs_args = make_renderstate_args(
-                        texture_ids[material_idx],
-                        blend_modes=(4, 7), # D3DBLEND_SRCALPHA, D3DBLEND_INVSRCALPHA
-                        texture_addressing=1,  # D3DTADDRESS_MIRROR
-                        lighting=False) # Map geometry is generally not affected by lighting
-                    rs_arg_count = len(rs_args)
-                    for rs_arg in rs_args:
-                        ptr = rel.write(rs_arg)
-                        if first_rs_arg_ptr == NULLPTR:
-                            first_rs_arg_ptr = ptr
-                # Write Indices
-                buf_ptr = rel.write(IndexBuffer(indices=strip), True)
-                index_buffer_containers.append(IndexBufferContainer(
-                    index_buffer=buf_ptr,
-                    index_count=len(strip),
-                    renderstate_args=first_rs_arg_ptr,
-                    renderstate_args_count=rs_arg_count))
-
-        # Index buffer containers need to be written back to back
-        first_index_buffer_container_ptr = None
-        for buf in index_buffer_containers:
-            ptr = rel.write(buf)
-            if first_index_buffer_container_ptr is None:
-                first_index_buffer_container_ptr = ptr
-        # XXX: Let's just put everything here regardless of if it has alpha or not
-        mesh.alpha_index_buffer_count = len(index_buffer_containers)
-        mesh.alpha_index_buffers = first_index_buffer_container_ptr
-
-        mesh_node.mesh = rel.write(mesh)
-        static_mesh_tree.root_node = rel.write(mesh_node)
-        static_mesh_trees.append(static_mesh_tree)
-    nrel.radius = chunk.radius = math.sqrt(farthest_sq)
-    first_static_mesh_tree_ptr = None
-    for tree in static_mesh_trees:
-        ptr = rel.write(tree)
-        if first_static_mesh_tree_ptr is None:
-            first_static_mesh_tree_ptr = ptr
-    chunk.static_mesh_trees = first_static_mesh_tree_ptr
-    nrel.chunks = rel.write(chunk)
+            vertex_colors = blender_mesh.color_attributes[0] if len(blender_mesh.color_attributes) > 0 else None
+            has_vertex_color = bool(vertex_colors)
+            if has_vertex_color:
+                # Despite the names of the types, they appear to be identical
+                if vertex_colors.data_type != "FLOAT_COLOR" and vertex_colors.data_type != "BYTE_COLOR":
+                    raise NrelError("Invalid vertex color format '{}'.".format(vertex_colors.data_type), obj=obj)
+                if vertex_colors.domain != "CORNER":
+                    raise NrelError("Invalid vertex color type '{}'. Please select 'Face Corner' when creating color attribute.".format(vertex_colors.domain), obj=obj)
+                if len(vertex_colors.data) != len(blender_mesh.loop_triangles) * 3:
+                    raise NrelError("Vertex color data length mismatch. Remember to triangulate your mesh before painting.", obj=obj)
+            # Write various mesh data
+            texture_ids = create_or_find_textures(textures, tex_images)
+            write_vertex_buffer(rel, obj, blender_mesh, mesh, has_textures, vertex_colors)
+            material_strips = create_tristrips_grouped_by_material(obj, blender_mesh, has_textures)
+            write_index_buffers(rel, mesh, material_strips, texture_ids)
+            mesh_node.mesh = rel.write(mesh)
+            static_mesh_tree.root_node = rel.write(mesh_node)
+            static_mesh_trees.append(static_mesh_tree)
+        # Write mesh trees back to back
+        first_static_mesh_tree_ptr = NULLPTR
+        for tree in static_mesh_trees:
+            ptr = rel.write(tree)
+            if first_static_mesh_tree_ptr == NULLPTR:
+                first_static_mesh_tree_ptr = ptr
+        chunk.static_mesh_trees = first_static_mesh_tree_ptr
+    # Write chunks back to back
+    first_chunk_ptr = NULLPTR
+    for chunk in chunk_to_children:
+        ptr = rel.write(chunk)
+        if first_chunk_ptr == NULLPTR:
+            first_chunk_ptr = ptr
+    nrel.chunks = first_chunk_ptr
     # Texture metadata
     if len(textures) > 0:
         first_texdata2_ptr = NULLPTR

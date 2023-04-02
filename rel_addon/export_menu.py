@@ -62,7 +62,7 @@ class ExportRel(Operator, ExportHelper):
         noext, ext = os.path.splitext(self.filepath)
         format_info = {
             "EXPORT_AS_NREL": lambda: n_rel.write(self.filepath, None, objs),
-            "EXPORT_AS_NREL_XVM": lambda: n_rel.write(self.filepath, noext[0:-1] + ".xvm", objs),
+            "EXPORT_AS_NREL_XVM": lambda: n_rel.write(self.filepath, noext[0:-1] + ".xvm", objs, []),
             "EXPORT_AS_CREL": lambda: c_rel.write(self.filepath, objs),
             "EXPORT_AS_RREL": lambda: r_rel.write(self.filepath, objs),
             "EXPORT_AS_ALL": lambda: self.export_all(objs, objs, objs)
@@ -73,12 +73,12 @@ class ExportRel(Operator, ExportHelper):
         writer()
         return {"FINISHED"}
     
-    def export_all(self, minimap_objs, render_objs, collision_objs):
+    def export_all(self, minimap_objs, render_objs, collision_objs, chunk_markers):
         noext, ext = os.path.splitext(self.filepath)
         if minimap_objs and len(minimap_objs) > 0:
             r_rel.write(noext + "r" + ext, minimap_objs)
         if render_objs and len(render_objs) > 0:
-            n_rel.write(noext + "n" + ext, noext + ".xvm", render_objs)
+            n_rel.write(noext + "n" + ext, noext + ".xvm", render_objs, chunk_markers)
         if collision_objs and len(collision_objs):
             c_rel.write(noext + "c" + ext, collision_objs)
         return {"FINISHED"}
@@ -87,6 +87,7 @@ class ExportRel(Operator, ExportHelper):
         render_objs = []
         collision_objs = []
         minimap_objs = []
+        chunk_markers = []
         for obj in bpy.data.objects:
             if obj.rel_settings.is_nrel:
                 render_objs.append(obj)
@@ -94,7 +95,9 @@ class ExportRel(Operator, ExportHelper):
                 collision_objs.append(obj)
             if obj.rel_settings.is_rrel:
                 minimap_objs.append(obj)
-        return self.export_all(minimap_objs, render_objs, collision_objs)
+            if obj.rel_settings.is_chunk:
+                chunk_markers.append(obj)
+        return self.export_all(minimap_objs, render_objs, collision_objs, chunk_markers)
 
     def execute(self, context):
         with catch_warnings(record=True) as warnings:
