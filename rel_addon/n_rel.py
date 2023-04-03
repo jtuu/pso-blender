@@ -286,7 +286,7 @@ def assign_objects_to_chunks(objects: list[bpy.types.Object], chunk_markers: lis
             chunk_counter += 1
         # Find each object's nearest chunk
         for obj in objects:
-            obj_center = util.from_blender_axes(obj.location)
+            obj_center = util.from_blender_axes(util.geometry_world_center(obj))
             nearest_chunk = None
             nearest_dist_sq = float("inf")
             for chunk in chunk_to_children:
