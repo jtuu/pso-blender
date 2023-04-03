@@ -109,6 +109,7 @@ class ExportRel(Operator, ExportHelper):
             # Display warnings in the GUI
             for warning in warnings:
                 self.report({"WARNING"}, str(warning.message))
+                print(warning)
             return result
     
     def draw(self, context):
