@@ -312,26 +312,30 @@ def assign_objects_to_chunks(objects: list[bpy.types.Object], chunk_markers: lis
     return chunk_to_children
 
 
-def create_or_find_textures(existing_textures: dict[str, xvm.Texture], tex_images: list[bpy.types.Image]) -> list[int]:
-    # Init counter as a "static" variable
-    if "counter" not in create_or_find_textures.__dict__:
-        create_or_find_textures.counter = 0
-    
-    texture_ids = []
-    for tex_image in tex_images:
-        w, h = tex_image.size
-        # If the image file is not found on disk the texture will still exist but without pixels
-        if w == 0 or h == 0 or len(tex_image.pixels) < 1:
-            raise NrelError("Texture has no pixels. Does the image file exist on disk?", texture=tex_image)
-        else:
-            # Deduplicate textures
-            image_abs_path = tex_image.filepath_from_user()
-            if image_abs_path in existing_textures:
-                texture_ids.append(existing_textures[image_abs_path].id)
+def assign_texture_identifiers(objects: list[bpy.types.Object]) -> dict[str, xvm.Texture]:
+    textures = dict()
+    id_counter = 0
+    for obj in objects:
+        tex_images = util.get_object_diffuse_textures(obj)
+        for tex_image in tex_images:
+            w, h = tex_image.size
+            # If the image file is not found on disk the texture will still exist but without pixels
+            if w == 0 or h == 0 or len(tex_image.pixels) < 1:
+                raise NrelError("Texture has no pixels. Does the image file exist on disk?", texture=tex_image)
             else:
-                texture_ids.append(create_or_find_textures.counter)
-                existing_textures[image_abs_path] = xvm.Texture(id=create_or_find_textures.counter, image=tex_image)
-                create_or_find_textures.counter += 1
+                # Deduplicate textures
+                image_abs_path = tex_image.filepath_from_user()
+                if image_abs_path not in textures:
+                    textures[image_abs_path] = xvm.Texture(id=id_counter, image=tex_image)
+                    id_counter += 1
+    return textures
+
+
+def get_texture_identifiers(textures: dict[str, xvm.Texture], obj: bpy.types.Object) -> list[int]:
+    texture_ids = []
+    tex_images = util.get_object_diffuse_textures(obj)
+    for tex_image in tex_images:
+        texture_ids.append(textures[tex_image.filepath_from_user()].id)
     return texture_ids
 
 
@@ -458,7 +462,7 @@ def write_index_buffers(rel: Rel, nrel_mesh: Mesh, material_strips: list[list[li
 def write(nrel_path: str, xvm_path: str, objects: list[bpy.types.Object], chunk_markers: list[bpy.types.Object]):
     rel = Rel()
     nrel = NrelFmt2()
-    textures = dict()
+    textures = assign_texture_identifiers(objects)
     # Create chunks
     chunk_to_children = assign_objects_to_chunks(objects, chunk_markers)
     nrel.chunk_count = len(chunk_to_children)
@@ -499,7 +503,7 @@ def write(nrel_path: str, xvm_path: str, objects: list[bpy.types.Object], chunk_
                 if len(vertex_colors.data) != len(blender_mesh.loop_triangles) * 3:
                     raise NrelError("Vertex color data length mismatch. Remember to triangulate your mesh before painting.", obj=obj)
             # Write various mesh data
-            texture_ids = create_or_find_textures(textures, tex_images)
+            texture_ids = get_texture_identifiers(textures, obj)
             write_vertex_buffer(rel, obj, blender_mesh, mesh, has_textures, vertex_colors)
             material_strips = create_tristrips_grouped_by_material(obj, blender_mesh, has_textures)
             write_index_buffers(rel, mesh, material_strips, texture_ids)
