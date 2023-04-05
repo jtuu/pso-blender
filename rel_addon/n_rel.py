@@ -154,6 +154,7 @@ class MeshTreeNode(Serializable):
 
 
 class MeshTreeFlag:
+    NO_FOG = 0x1
     RECEIVES_SHADOWS = 0x10
 
 
@@ -476,6 +477,8 @@ def write(nrel_path: str, xvm_path: str, objects: list[bpy.types.Object], chunk_
             blender_mesh = obj.to_mesh()
             # One mesh per tree. Create tree, a node, and the mesh.
             tree_flags = 0
+            if not obj.rel_settings.receives_fog:
+                tree_flags |= MeshTreeFlag.NO_FOG
             if obj.rel_settings.receives_shadows:
                 tree_flags |= MeshTreeFlag.RECEIVES_SHADOWS
             static_mesh_tree = MeshTree(tree_flags=tree_flags)
