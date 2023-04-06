@@ -414,7 +414,8 @@ def create_tristrips_grouped_by_material(obj: bpy.types.Object, blender_mesh: bp
         for face in blender_mesh.loop_triangles:
             material_faces[face.material_index].append(tuple(face.loops))
         for faces in material_faces:
-            material_strips.append(tristrip.stripify(faces, stitchstrips=True))
+            strip = tristrip.stripify(faces, stitchstrips=True)
+            material_strips.append(strip)
     else:
         faces = []
         for face in blender_mesh.loop_triangles:
@@ -428,6 +429,9 @@ def write_index_buffers(rel: Rel, nrel_mesh: Mesh, material_strips: list[list[li
     index_buffer_containers = []
     for (material_idx, strips) in enumerate(material_strips):
         for strip in strips:
+            # Strips can be empty due to unused material slots, skip them
+            if len(strip) < 1:
+                continue
             # Create render state args
             rs_arg_count = 0
             first_rs_arg_ptr = NULLPTR
