@@ -53,10 +53,29 @@ class Face(Serializable):
 
 @dataclass
 class Mesh(Serializable):
-    unk1: U32 = 0
+    vertex_count: U32 = 0
     vertices: Ptr32 = NULLPTR # VertexArray
     face_count: U32 = 0
     faces: Ptr32 = NULLPTR # Face
+
+
+class CollisionFlag:
+    CAMERA = 0x1
+    UNK1 = 0x2
+    UNK2 = 0x4
+    UNK3 = 0x8
+    UNK4 = 0x10
+    UNK5 = 0x20
+    UNK6 = 0x40
+    UNK7 = 0x80
+    PROJECTILES = 0x100
+    UNK8 = 0x200
+    UNK9 = 0x400
+    PLAYERS_AND_MONSTERS = 0x800
+    UNK10 = 0x1000
+    PLAYERS_ONLY = 0x2000
+    UNK11 = 0x4000
+    MONSTER_VISION = 0x8000
 
 
 @dataclass
@@ -81,8 +100,21 @@ def write(path: str, objects: list[bpy.types.Object]):
         blender_mesh = obj.to_mesh()
         vertex_array = VertexArray()
         geom_center = util.from_blender_axes(util.geometry_world_center(obj))
+
+        collision_flags = 0
+        if obj.rel_settings.camera_collides:
+            collision_flags |= CollisionFlag.CAMERA
+        if obj.rel_settings.players_and_monsters_collide:
+            collision_flags |= CollisionFlag.PLAYERS_AND_MONSTERS
+        if obj.rel_settings.blocks_projectiles:
+            collision_flags |= CollisionFlag.PROJECTILES
+        if obj.rel_settings.only_players_collide:
+            collision_flags |= CollisionFlag.PLAYERS_ONLY
+        if obj.rel_settings.blocks_monster_vision:
+            collision_flags |= CollisionFlag.MONSTER_VISION
+        print(hex(collision_flags))
         node = CrelNode(
-            flags=0x00000921,
+            flags=collision_flags,
             x=geom_center[0],
             y=geom_center[1],
             z=geom_center[2])
@@ -95,7 +127,10 @@ def write(path: str, objects: list[bpy.types.Object]):
                 x=world_vert[0], y=world_vert[1], z=world_vert[2]))
         node.radius = math.sqrt(farthest_sq)
 
-        mesh = Mesh(vertices=rel.write(vertex_array), face_count=len(blender_mesh.loop_triangles))
+        mesh = Mesh(
+            vertex_count=len(vertex_array.vertices),
+            vertices=rel.write(vertex_array),
+            face_count=len(blender_mesh.loop_triangles))
 
         # Write faces
         first_face_ptr = None
@@ -103,14 +138,21 @@ def write(path: str, objects: list[bpy.types.Object]):
             # Apply world rotation and scale transforms to normal
             normal = face.normal.to_4d()
             normal.w = 0
-            normal = util.from_blender_axes((obj.matrix_world @ normal).to_3d())
+            normal = util.from_blender_axes((obj.matrix_world @ normal).to_3d().normalized())
             indices = face.vertices
-            # Find distance of farthest vertex from center
+            # Find farthest distance between vertices
+            farthest_sq = float("-inf")
+            for i in range(len(face.vertices)):
+                for j in range(len(face.vertices)):
+                    if i == j:
+                        continue
+                    a = vertex_array.vertices[i].as_vector().xz
+                    b = vertex_array.vertices[j].as_vector().xz
+                    farthest_sq = max(farthest_sq, util.distance_squared(a, b))
             center = util.from_blender_axes(obj.matrix_world @ face.center)
-            farthest_sq = max(map(lambda vi: util.distance_squared(vertex_array.vertices[vi].as_vector().xz, center.xz), face.vertices))
             radius = math.sqrt(farthest_sq)
             ptr = rel.write(Face(
-                flags=0x0101,
+                flags=collision_flags,
                 x=center[0],
                 y=center[1],
                 z=center[2],
