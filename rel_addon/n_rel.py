@@ -423,7 +423,7 @@ def create_tristrips_grouped_by_material(obj: bpy.types.Object, blender_mesh: bp
     return material_strips
 
 
-def write_index_buffers(rel: Rel, nrel_mesh: Mesh, material_strips: list[list[list[int]]], texture_ids: list[int]):
+def write_index_buffers(rel: Rel, nrel_mesh: Mesh, material_strips: list[list[list[int]]], texture_ids: list[int], is_transparent: bool):
     # One buffer per strip
     index_buffer_containers = []
     for (material_idx, strips) in enumerate(material_strips):
@@ -432,9 +432,12 @@ def write_index_buffers(rel: Rel, nrel_mesh: Mesh, material_strips: list[list[li
             rs_arg_count = 0
             first_rs_arg_ptr = NULLPTR
             if len(texture_ids) > 0:
+                blend_modes = (4, 7) # D3DBLEND_SRCALPHA, D3DBLEND_INVSRCALPHA
+                if is_transparent:
+                    blend_modes = (4, 1) # D3DBLEND_SRCALPHA, D3DBLEND_ONE
                 rs_args = make_renderstate_args(
                     texture_ids[material_idx],
-                    blend_modes=(4, 7), # D3DBLEND_SRCALPHA, D3DBLEND_INVSRCALPHA
+                    blend_modes=blend_modes,
                     texture_addressing=1,  # D3DTADDRESS_MIRROR
                     lighting=False) # Map geometry is generally not affected by lighting
                 rs_arg_count = len(rs_args)
@@ -509,7 +512,7 @@ def write(nrel_path: str, xvm_path: str, objects: list[bpy.types.Object], chunk_
             texture_ids = get_texture_identifiers(textures, obj)
             write_vertex_buffer(rel, obj, blender_mesh, mesh, has_textures, vertex_colors)
             material_strips = create_tristrips_grouped_by_material(obj, blender_mesh, has_textures)
-            write_index_buffers(rel, mesh, material_strips, texture_ids)
+            write_index_buffers(rel, mesh, material_strips, texture_ids, obj.rel_settings.is_transparent)
             mesh_node.mesh = rel.write(mesh)
             static_mesh_tree.root_node = rel.write(mesh_node)
             static_mesh_trees.append(static_mesh_tree)

@@ -9,6 +9,7 @@ class MeshRelSettings(bpy.types.PropertyGroup):
     is_rrel: BoolProperty(name="R.REL")
     receives_shadows: BoolProperty(name="Receives shadows", default=True)
     receives_fog: BoolProperty(name="Affected by fog", default=False)
+    is_transparent: BoolProperty(name="Transparent", default=False)
     is_chunk: BoolProperty(name="Chunk marker", description="Object is used as a chunk marker. All meshes are automatically assigned to the nearest chunk marker.", default=False)
 
 
@@ -36,6 +37,7 @@ class MeshNrelSettingsPanel(Panel):
         col = self.layout.column(align=True)
         col.prop(settings, "receives_shadows")
         col.prop(settings, "receives_fog")
+        col.prop(settings, "is_transparent")
 
 
 class MeshCrelSettingsPanel(Panel):
