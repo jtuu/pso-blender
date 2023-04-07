@@ -41,6 +41,12 @@ class MyPointingStruct(Serializable):
     sibling: Ptr32 = NULLPTR
 
 
+@dataclass
+class MyBufferStruct(Serializable):
+    data_count: U32 = 0
+    data: bytearray = field(default_factory=bytearray)
+
+
 class TestSerialization(unittest.TestCase):
     def test_basic_struct_instance_size(self):
         self.assertEqual(MyBasicStruct().instance_size(), 12)
@@ -79,7 +85,18 @@ class TestSerialization(unittest.TestCase):
         data = [1, 2, 3]
         item = MyPointingStruct(data_count=len(data), data=data, sibling=1337)
         self.assertEqual(item.nonnull_pointer_member_offsets(), [11])
-
+    
+    def test_serialize_buffer_member(self):
+        buf = ResizableBuffer(0)
+        data = b"\xde\xad\xbe\xef"
+        item = MyBufferStruct(data=data, data_count=len(data))
+        offset = item.serialize_into(buf)
+        self.assertEqual(offset, 0)
+        self.assertEqual(buf.buffer[0], len(data))
+        self.assertEqual(buf.buffer[4], 0xde)
+        self.assertEqual(buf.buffer[5], 0xad)
+        self.assertEqual(buf.buffer[6], 0xbe)
+        self.assertEqual(buf.buffer[7], 0xef)
 
 class TestDeserialization(unittest.TestCase):
     def test_basic_struct_deserialize(self):

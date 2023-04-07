@@ -71,9 +71,11 @@ class ResizableBuffer:
         self.buffer += bytearray(by)
         self.capacity += by
     
-    def append(self, other: bytearray):
+    def append(self, other: bytearray) -> int:
+        offset_before = self.offset
         self.buffer += other
         self.capacity += len(other)
+        return offset_before
     
     def seek_to_end(self):
         self.offset = self.capacity
@@ -189,9 +191,11 @@ class Serializable:
                 if not should_continue:
                     break
             return should_continue
-        
         fmt = None
-        if get_origin(value) is not list and get_origin(value) is not tuple:
+        is_buffer = type(value) is bytes or type(value) is bytearray
+        if is_buffer:
+            tp = type(value)
+        elif get_origin(value) is not list and get_origin(value) is not tuple:
             # Value is primitive
             # Determine format from name or type
             if name is not None:
@@ -207,11 +211,13 @@ class Serializable:
     
     @staticmethod
     def _serializer_visitor(**kwargs) -> bool:
-        (value, ctx, fmt) = itemgetter("value", "ctx", "fmt")(kwargs)
+        (value, ctx, fmt, tp) = itemgetter("value", "ctx", "fmt", "tp")(kwargs)
         if fmt:
             offset = ctx["buf"].pack(fmt, value)
-            if ctx["first_offset"] is None:
-                ctx["first_offset"] = offset
+        elif tp is bytes or tp is bytearray:
+            offset = ctx["buf"].append(value)
+        if ctx["first_offset"] is None:
+            ctx["first_offset"] = offset
         return True
 
     def serialize_into(self, buf: ResizableBuffer, alignment=None) -> int:
