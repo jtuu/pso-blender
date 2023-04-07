@@ -1,3 +1,4 @@
+import os
 from dataclasses import dataclass, field
 import bpy
 import bpy.types
@@ -92,27 +93,84 @@ class Texture:
     image: bpy.types.Image
 
 
-def write(path: str, textures: list[Texture]):
-    xvrs = []
-    for tex in textures:
-        width, height = tex.image.size
-        has_alpha = tex.image.channels == 4
-        flags = 0
+def generate_mipmaps(image: bpy.types.Image, has_alpha: bool) -> list[bpy.types.Image]:
+    mip_dim, _ = image.size
+    levels = []
+    level_idx = 0
+    alpha_test = 0.75 # Value used by the game
+
+    alpha_test_count = 0
+    if has_alpha:
+        for px_idx in range(0, len(image.pixels), 4):
+            alpha = image.pixels[px_idx + 3]
+            if alpha > alpha_test:
+                alpha_test_count += 1
+    orig_coverage = alpha_test_count / (mip_dim * mip_dim)
+
+    while True:
+        level_idx += 1
+        mip_dim = mip_dim // 2
+        if mip_dim <= 2:
+            break
+        level = image.copy()
+        level.scale(mip_dim, mip_dim)
         if has_alpha:
-            if tex.image.alpha_mode != "STRAIGHT":
-                raise Exception("XVR Error in Image '{}': Image has unsupported alpha mode '{}'".format(tex.image.filepath, tex.image.alpha_mode))
-            flags |= XvrFlags.ALPHA
-        xvr_format = XvrFormat.DXT1
-        data = dxt.compress_image(list(tex.image.pixels), width, height, tex.image.channels, has_alpha)
-        xvrs.append(Xvr(
-            body_size=len(data) + Xvr.type_size() - 4,
-            id=tex.id,
-            flags=flags,
-            format=xvr_format,
-            width=width,
-            height=height,
-            data_size=len(data),
-            data=data))
+            alpha_threshold = orig_coverage * alpha_test * mip_dim
+            for px_idx in range(0, len(level.pixels), 4):
+                alpha = level.pixels[px_idx + 3]
+                if alpha > alpha_threshold:
+                    level.pixels[px_idx + 3] = 1.0
+        levels.append(level)
+    return levels
+
+
+def write(path: str, textures: list[Texture]):
+    xvr_ext = ".xvr"
+    (dirname, _) = os.path.split(path)
+    xvrs = []
+    magic_size = 4
+    for tex in textures:
+        (_, basename) = os.path.split(tex.image.filepath)
+        cached_xvr_path = os.path.join(dirname, basename + xvr_ext)
+        # First try to load cached textures from destination directory
+        if os.path.isfile(cached_xvr_path):
+            print("XVM Notice: Loading texture from cache '{}'".format(cached_xvr_path))
+            with open(cached_xvr_path, "rb") as f:
+                file_contents = f.read()
+                (xvr, offset) = Xvr.deserialize_from(file_contents[magic_size:])
+                xvr.data = file_contents[offset + magic_size:]
+        else:
+            # No cache
+            img_width, img_height = tex.image.size
+            has_alpha = tex.image.channels == 4
+            flags = XvrFlags.MIPMAPS
+            if has_alpha:
+                if tex.image.alpha_mode != "STRAIGHT":
+                    raise Exception("XVR Error in Image '{}': Image has unsupported alpha mode '{}'".format(tex.image.filepath, tex.image.alpha_mode))
+                flags |= XvrFlags.ALPHA
+            xvr_format = XvrFormat.DXT1
+            mipmaps = generate_mipmaps(tex.image, has_alpha)
+            data = dxt.compress_image(list(tex.image.pixels), img_width, img_height, tex.image.channels, has_alpha)
+            for level in mipmaps:
+                level_width, level_height = level.size
+                data += dxt.compress_image(list(level.pixels), level_width, level_height, level.channels, has_alpha)
+            xvr = Xvr(
+                body_size=len(data) + Xvr.type_size() - magic_size,
+                id=tex.id,
+                flags=flags,
+                format=xvr_format,
+                width=img_width,
+                height=img_height,
+                data_size=len(data))
+            # Write to cache
+            buf = ResizableBuffer(0)
+            xvr.serialize_into(buf)
+            buf.append(data)
+            xvr.data = data
+            with open(cached_xvr_path, "wb") as f:
+                print("XVM Notice: Saving texture to cache '{}'".format(cached_xvr_path))
+                f.write(buf.buffer)
+        xvrs.append(xvr)
     buf = ResizableBuffer(0)
     # I'll just explicitly write the lists because it's easier
     xvm = Xvm(
