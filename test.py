@@ -81,5 +81,15 @@ class TestSerialization(unittest.TestCase):
         self.assertEqual(item.nonnull_pointer_member_offsets(), [11])
 
 
+class TestDeserialization(unittest.TestCase):
+    def test_basic_struct_deserialize(self):
+        buf = b"\x00\x00\x80\x3f\x00\x00\x80\x3f\x00\x00\x80\x3f"
+        (result, offset) = MyBasicStruct.deserialize_from(buf)
+        self.assertEqual(offset, 12)
+        self.assertEqual(result.x, 1.0)
+        self.assertEqual(result.y, 1.0)
+        self.assertEqual(result.z, 1.0)
+
+
 if __name__ == '__main__':
     unittest.main()

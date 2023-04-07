@@ -1,7 +1,7 @@
 import sys
 from dataclasses import dataclass, field
 from typing import NewType, get_type_hints, get_args, get_origin
-from struct import pack_into
+from struct import pack_into, unpack_from
 from warnings import warn
 from operator import itemgetter
 
@@ -111,7 +111,7 @@ class Serializable:
         if fmt:
             ctx["size_sum"] += Numeric.size_of_format(fmt)
         return True
-    
+
     def nonnull_pointer_member_offsets(self) -> list[int]:
         ctx = {
             "size_sum": 0,
@@ -226,6 +226,24 @@ class Serializable:
         ctx = {"first_offset": None, "buf": buf}
         self._visit(item, ctx, Serializable._serializer_visitor)
         return ctx["first_offset"]
+    
+    def _deserializer_visitor(**kwargs) -> bool:
+        (name, ctx, fmt) = itemgetter("name", "ctx", "fmt")(kwargs)
+        if fmt:
+            sz = Numeric.size_of_format(fmt)
+            (value, ) = unpack_from(fmt, ctx["buf"], ctx["offset"])
+            ctx["result"].__dict__[name] = value
+            ctx["offset"] += sz
+        return True
+    
+    @classmethod
+    def deserialize_from(cls, buf):
+        """Assumes class has default constructor"""
+        result = cls() # Default construct
+        ctx = {"result": result, "offset": 0, "buf": buf}
+        cls._visit(cls, ctx, Serializable._deserializer_visitor)
+        return (result, ctx["offset"])
+        
 
 
 @dataclass
