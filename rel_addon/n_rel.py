@@ -327,7 +327,7 @@ def assign_texture_identifiers(objects: list[bpy.types.Object]) -> dict[str, xvm
                 # Deduplicate textures
                 image_abs_path = tex_image.filepath_from_user()
                 if image_abs_path not in textures:
-                    textures[image_abs_path] = xvm.Texture(id=id_counter, image=tex_image)
+                    textures[image_abs_path] = xvm.Texture(id=id_counter, image=tex_image, generate_mipmaps=obj.rel_settings.generate_mipmaps)
                     id_counter += 1
     return textures
 

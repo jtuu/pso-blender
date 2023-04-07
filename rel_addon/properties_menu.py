@@ -10,6 +10,7 @@ class MeshRelSettings(bpy.types.PropertyGroup):
     receives_shadows: BoolProperty(name="Receives shadows", default=True)
     receives_fog: BoolProperty(name="Affected by fog", default=False)
     is_transparent: BoolProperty(name="Transparent", default=False)
+    generate_mipmaps: BoolProperty(name="Generate Mipmaps (slow)", default=False, description="Generate mipmaps for any textures that this mesh uses")
     is_chunk: BoolProperty(name="Chunk marker", description="Object is used as a chunk marker. All meshes are automatically assigned to the nearest chunk marker.", default=False)
 
 
@@ -38,6 +39,7 @@ class MeshNrelSettingsPanel(Panel):
         col.prop(settings, "receives_shadows")
         col.prop(settings, "receives_fog")
         col.prop(settings, "is_transparent")
+        col.prop(settings, "generate_mipmaps")
 
 
 class MeshCrelSettingsPanel(Panel):

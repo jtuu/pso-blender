@@ -90,6 +90,7 @@ class Xvm(Serializable):
 @dataclass
 class Texture:
     id: int
+    generate_mipmaps: bool
     image: bpy.types.Image
 
 
@@ -143,17 +144,20 @@ def write(path: str, textures: list[Texture]):
             # No cache
             img_width, img_height = tex.image.size
             has_alpha = tex.image.channels == 4
-            flags = XvrFlags.MIPMAPS
+            flags = 0
+            if tex.generate_mipmaps:
+                flags |= XvrFlags.MIPMAPS
             if has_alpha:
                 if tex.image.alpha_mode != "STRAIGHT":
                     raise Exception("XVR Error in Image '{}': Image has unsupported alpha mode '{}'".format(tex.image.filepath, tex.image.alpha_mode))
                 flags |= XvrFlags.ALPHA
             xvr_format = XvrFormat.DXT1
-            mipmaps = generate_mipmaps(tex.image, has_alpha)
             data = dxt.compress_image(list(tex.image.pixels), img_width, img_height, tex.image.channels, has_alpha)
-            for level in mipmaps:
-                level_width, level_height = level.size
-                data += dxt.compress_image(list(level.pixels), level_width, level_height, level.channels, has_alpha)
+            if tex.generate_mipmaps:
+                mipmaps = generate_mipmaps(tex.image, has_alpha)
+                for level in mipmaps:
+                    level_width, level_height = level.size
+                    data += dxt.compress_image(list(level.pixels), level_width, level_height, level.channels, has_alpha)
             xvr = Xvr(
                 body_size=len(data) + Xvr.type_size() - magic_size,
                 id=tex.id,
