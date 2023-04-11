@@ -4,8 +4,7 @@ from dataclasses import dataclass, field
 import bpy.types 
 from .rel import Rel
 from .serialization import Serializable, Numeric
-from . import util
-
+from . import util, properties_menu
 
 U8 = Numeric.U8
 U16 = Numeric.U16
@@ -64,18 +63,26 @@ class CollisionFlag:
     UNK1 = 0x2
     UNK2 = 0x4
     UNK3 = 0x8
-    UNK4 = 0x10
-    UNK5 = 0x20
-    UNK6 = 0x40
+    TERRAIN_GRASS = 0x10
+    WALL = 0x20
+    MONSTERS_ONLY = 0x40 # Allows monsters to aggro and path towards it but prevents actually going through it
     UNK7 = 0x80
     PROJECTILES = 0x100
     UNK8 = 0x200
     UNK9 = 0x400
-    PLAYERS_AND_MONSTERS = 0x800
+    PLAYERS_AND_MONSTERS = 0x800 # Prevents players. Allows monsters to aggro but not path towards it or go through. 
     UNK10 = 0x1000
     PLAYERS_ONLY = 0x2000
     UNK11 = 0x4000
-    MONSTER_VISION = 0x8000
+    MONSTER_VISION = 0x8000 # Prevents monsters from seeing player
+
+
+CollisionFlag.settings_mapping = {
+    "camera_collides": CollisionFlag.CAMERA,
+    "players_and_monsters_collide": CollisionFlag.PLAYERS_AND_MONSTERS,
+    "blocks_projectiles": CollisionFlag.PROJECTILES,
+    "blocks_monster_vision": CollisionFlag.MONSTER_VISION
+}
 
 
 @dataclass
@@ -93,6 +100,24 @@ class Crel(Serializable):
     nodes: Ptr32 = NULLPTR # CrelNode
 
 
+
+def make_collision_flags(settings: properties_menu.MeshRelSettings) -> int:
+    collision_flags = 0
+    for setting_name in CollisionFlag.settings_mapping:
+        setting = getattr(settings, setting_name)
+        flag = CollisionFlag.settings_mapping[setting_name]
+        if setting:
+            collision_flags |= flag
+    return collision_flags
+
+
+def set_collision_settings_from_flags(settings: properties_menu.MeshRelSettings, flags: int):
+    for setting_name in CollisionFlag.settings_mapping:
+        mask = CollisionFlag.settings_mapping[setting_name]
+        setting = (flags & mask) != 0
+        setattr(settings, setting_name, setting)
+
+
 def write(path: str, objects: list[bpy.types.Object]):
     rel = Rel()
     nodes = []
@@ -101,18 +126,8 @@ def write(path: str, objects: list[bpy.types.Object]):
         vertex_array = VertexArray()
         geom_center = util.from_blender_axes(util.geometry_world_center(obj))
 
-        collision_flags = 0
-        if obj.rel_settings.camera_collides:
-            collision_flags |= CollisionFlag.CAMERA
-        if obj.rel_settings.players_and_monsters_collide:
-            collision_flags |= CollisionFlag.PLAYERS_AND_MONSTERS
-        if obj.rel_settings.blocks_projectiles:
-            collision_flags |= CollisionFlag.PROJECTILES
-        if obj.rel_settings.only_players_collide:
-            collision_flags |= CollisionFlag.PLAYERS_ONLY
-        if obj.rel_settings.blocks_monster_vision:
-            collision_flags |= CollisionFlag.MONSTER_VISION
-        print(hex(collision_flags))
+        collision_flags = make_collision_flags(obj)
+
         node = CrelNode(
             flags=collision_flags,
             x=geom_center[0],

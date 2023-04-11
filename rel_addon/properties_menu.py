@@ -1,6 +1,7 @@
 import bpy
 from bpy.types import Panel
-from bpy.props import BoolProperty
+from bpy.props import BoolProperty, IntProperty
+from . import c_rel
 
 
 class MeshRelSettings(bpy.types.PropertyGroup):
@@ -12,6 +13,7 @@ class MeshRelSettings(bpy.types.PropertyGroup):
     is_transparent: BoolProperty(name="Transparent", default=False)
     generate_mipmaps: BoolProperty(name="Generate Mipmaps (slow)", default=False, description="Generate mipmaps for any textures that this mesh uses")
     is_chunk: BoolProperty(name="Chunk marker", description="Object is used as a chunk marker. All meshes are automatically assigned to the nearest chunk marker.", default=False)
+    collision_flags_value: IntProperty(default=0, get=lambda self: c_rel.make_collision_flags(self))
     camera_collides: BoolProperty(name="Camera", default=True)
     players_and_monsters_collide: BoolProperty(name="Players and monsters", default=True)
     blocks_projectiles: BoolProperty(name="Projectiles", default=True)
@@ -68,11 +70,11 @@ class MeshCrelSettingsPanel(Panel):
         self.layout.use_property_decorate = False
         settings = context.object.rel_settings
         self.layout.active = settings.is_crel
+        self.layout.row(align=True).label(text="Flags: " + hex(settings.collision_flags_value))
         col = self.layout.column(heading="Collides with:", align=True)
         col.prop(settings, "camera_collides")
         col.prop(settings, "players_and_monsters_collide")
         col.prop(settings, "blocks_projectiles")
-        # col.prop(settings, "only_players_collide") # Just gonna disable this for now since it's probably not needed
         col.prop(settings, "blocks_monster_vision")
 
 
