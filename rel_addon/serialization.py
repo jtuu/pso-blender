@@ -1,7 +1,7 @@
 import sys
 from dataclasses import dataclass, field
 from typing import NewType, get_type_hints, get_args, get_origin
-from struct import pack_into, unpack_from
+from struct import pack_into, unpack_from, error as StructError
 from warnings import warn
 from operator import itemgetter
 
@@ -211,9 +211,14 @@ class Serializable:
     
     @staticmethod
     def _serializer_visitor(**kwargs) -> bool:
-        (value, ctx, fmt, tp) = itemgetter("value", "ctx", "fmt", "tp")(kwargs)
+        (name, value, ctx, fmt, tp) = itemgetter("name", "value", "ctx", "fmt", "tp")(kwargs)
         if fmt:
-            offset = ctx["buf"].pack(fmt, value)
+            try:
+                offset = ctx["buf"].pack(fmt, value)
+            except StructError as err:
+                # Rethrow with more info
+                orig_msg = err.args[0]
+                raise Exception("Serialization error in member '{}' with value '{}' and type '{}': {}".format(name, value, tp, orig_msg))
         elif tp is bytes or tp is bytearray:
             offset = ctx["buf"].append(value)
         if ctx["first_offset"] is None:
@@ -231,6 +236,8 @@ class Serializable:
                 item = AlignmentHelper(wrapped=self, padding=[0] * padding)
         ctx = {"first_offset": None, "buf": buf}
         self._visit(item, ctx, Serializable._serializer_visitor)
+        if ctx["first_offset"] is None:
+            raise Exception("Serialization error: Did not write anything")
         return ctx["first_offset"]
     
     def _deserializer_visitor(**kwargs) -> bool:

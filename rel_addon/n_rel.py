@@ -482,6 +482,8 @@ def write(nrel_path: str, xvm_path: str, objects: list[bpy.types.Object], chunk_
         static_mesh_trees = []
         for obj in chunk_objects:
             blender_mesh = obj.to_mesh()
+            if len(blender_mesh.loop_triangles) < 1:
+                raise NrelError("Object has no faces.", obj=obj)
             # One mesh per tree. Create tree, a node, and the mesh.
             tree_flags = 0
             if not obj.rel_settings.receives_fog:
