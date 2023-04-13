@@ -186,6 +186,7 @@ def write(path: str, textures: list[Texture]):
         # Try to load cached textures from destination directory
         if os.path.isfile(cached_xvr_path):
             xvr = get_cached_xvr(cached_xvr_path)
+            xvr.id = tex.id # Use new texture id
         else:
             xvr = make_xvr(tex)
             cache_xvr(cached_xvr_path, xvr)
