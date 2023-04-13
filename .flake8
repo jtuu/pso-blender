@@ -19,5 +19,6 @@ extend-ignore =
     E731
 per-file-ignores =
     rel_addon/export_menu.py: F722 F821
+    rel_addon/import_menu.py: F722 F821
     rel_addon/properties_menu.py: F722 F821
     rel_addon/__init__.py: F403 F405

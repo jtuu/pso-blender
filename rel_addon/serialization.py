@@ -62,8 +62,11 @@ generate_numeric_types()
 
 
 class ResizableBuffer:
-    def __init__(self, size):
-        self.buffer = bytearray(size)
+    def __init__(self, *args, size=0, buf=None):
+        if buf is None:
+            self.buffer = bytearray(size)
+        else:
+            self.buffer = buf
         self.capacity = size
         self.offset = 0
     
@@ -250,14 +253,13 @@ class Serializable:
         return True
     
     @classmethod
-    def deserialize_from(cls, buf):
+    def deserialize_from(cls, buf, offset=0):
         """Assumes class has default constructor"""
         result = cls() # Default construct
-        ctx = {"result": result, "offset": 0, "buf": buf}
+        ctx = {"result": result, "offset": offset, "buf": buf}
         cls._visit(cls, ctx, Serializable._deserializer_visitor)
         return (result, ctx["offset"])
         
-
 
 @dataclass
 class AlignmentHelper(Serializable):

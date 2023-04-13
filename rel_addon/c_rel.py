@@ -1,10 +1,11 @@
-import math
+import math, os
 from mathutils import Vector
 from dataclasses import dataclass, field
 import bpy.types 
 from .rel import Rel
 from .serialization import Serializable, Numeric
 from . import util, properties_menu
+
 
 U8 = Numeric.U8
 U16 = Numeric.U16
@@ -100,7 +101,6 @@ class Crel(Serializable):
     nodes: Ptr32 = NULLPTR # CrelNode
 
 
-
 def make_collision_flags(settings: properties_menu.MeshRelSettings) -> int:
     collision_flags = 0
     for setting_name in CollisionFlag.settings_mapping:
@@ -194,3 +194,87 @@ def write(path: str, objects: list[bpy.types.Object]):
     file_contents = rel.finish(rel.write(Crel(nodes=first_node_ptr)))
     with open(path, "wb") as f:
         f.write(file_contents)
+
+
+def flags_to_color(flags: int) -> tuple[float, float, float]:
+    import colorsys
+    flags = (flags * 1103515245 + 12345) % (1 << 31)
+    return colorsys.hsv_to_rgb(flags / (1 << 31), 0.5, 0.5)
+
+
+def to_blender_mesh(rel: Rel, node: CrelNode, node_idx: int) -> bpy.types.Object:
+    blender_vertices = []
+    blender_edges = []
+    blender_faces = []
+    (mesh, _) = rel.read(Mesh, node.mesh)
+    blender_mesh = bpy.data.meshes.new("mesh_" + str(node_idx))
+    faces = []
+
+    vertex_size = Vertex.type_size()
+    for i in range(mesh.vertex_count):
+        (vertex, _) = rel.read(Vertex, mesh.vertices + vertex_size * i)
+        coords = [vertex.x - node.x, vertex.z - node.z, vertex.y - node.y]
+        blender_vertices.append(coords)
+
+    face_size = Face.type_size()
+    for i in range(mesh.face_count):
+        (face, _) = rel.read(Face, mesh.faces + face_size * i)
+        indices = [face.index0, face.index1, face.index2]
+        blender_faces.append(indices)
+        faces.append(face)
+
+    blender_mesh.from_pydata(blender_vertices, blender_edges, blender_faces)
+    blender_mesh.update()
+
+    face_colors = blender_mesh.attributes.new("collision_type_color", "BYTE_COLOR", "CORNER")
+    for (face_idx, poly) in enumerate(blender_mesh.polygons):
+        for loop_idx in poly.loop_indices:
+            color = flags_to_color(faces[face_idx].flags)
+            out = face_colors.data[loop_idx].color
+            out[0] = color[0]
+            out[1] = color[1]
+            out[2] = color[2]
+            out[3] = 1.0
+
+    obj = bpy.data.objects.new("object_" + str(node_idx), blender_mesh)
+    set_collision_settings_from_flags(obj.rel_settings, node.flags)
+
+    flag_face_maps = dict()
+    for (face_idx, face) in enumerate(faces):
+        name = "collision_type_" + hex(face.flags)
+        if name in flag_face_maps:
+            grp = flag_face_maps[name]
+        else:
+            grp = obj.face_maps.new(name=name)
+            flag_face_maps[name] = grp
+        grp.add([face_idx])
+    
+    obj.location.x = node.x
+    obj.location.y = node.z
+    obj.location.z = node.y
+
+    return obj
+
+
+def read(path: str) -> bpy.types.Collection:
+    filename = os.path.basename(path)
+    collection = bpy.data.collections.new(filename)
+
+    with open(path, "rb") as f:
+        rel = Rel.read_from(bytearray(f.read()))
+    (crel, _) = rel.read(Crel, rel.payload_offset)
+
+    node_idx = 0
+    node_offset = crel.nodes
+    while True:
+        (node, next_offset) = rel.read(CrelNode, node_offset)
+        if not rel.is_nonnull_pointer(next_offset + 0):
+            break
+        obj = to_blender_mesh(rel, node, node_idx)
+        collection.objects.link(obj)
+        node_offset = next_offset
+        node_idx += 1
+
+    return collection
+
+

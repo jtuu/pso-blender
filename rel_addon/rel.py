@@ -1,18 +1,25 @@
-from struct import pack_into
+from struct import pack_into, unpack_from
 from warnings import warn
 from .serialization import Serializable, ResizableBuffer
 
 
 class Rel:
     ALIGNMENT = 4
+    POINTER_TABLE_POINTER_OFFSET = -0x20
+    POINTER_COUNT_OFFSET = -0x1c
+    PAYLOAD_POINTER_OFFSET = -0x10
 
-    def __init__(self):
-        self.buf: ResizableBuffer = ResizableBuffer(0)
+    def __init__(self, *args, buf=None):
+        if buf is None:
+            self.buf = ResizableBuffer(0)
+            # Consume the 0th offset to ensure that no userdata can have pointers that point to 0
+            # because we use 0 as nullptr even though technically it would be a valid offset
+            self.buf.pack("<L", 0)
+            self.payload_offset = None
+        else:
+            self.buf = buf
         self.pointer_offsets: list[int] = []
         self.warned_misalignment = False
-        # Consume the 0th offset to ensure that no userdata can have pointers that point to 0
-        # because we use 0 as nullptr even though technically it would be a valid offset
-        self.buf.pack("<L", 0)
 
     def write(self, item: Serializable, ensure_aligned=False) -> int:
         item_offset = item.serialize_into(self.buf, Rel.ALIGNMENT if ensure_aligned else None)
@@ -28,10 +35,6 @@ class Rel:
         return item_offset
 
     def finish(self, payload_offset: int) -> bytearray:
-        pointer_table_pointer_offset = -0x20
-        pointer_count_offset = -0x1c
-        payload_pointer_offset = -0x10
-
         # Create pointer table
         self.pointer_offsets.sort()
         pointer_count = len(self.pointer_offsets)
@@ -49,7 +52,34 @@ class Rel:
             self.buf.pack("<H", rel_offset)
         # Create trailer
         self.buf.grow(0x20)
-        pack_into("<L", self.buf.buffer, pointer_table_pointer_offset, pointer_table_offset)
-        pack_into("<L", self.buf.buffer, pointer_count_offset, pointer_count)
-        pack_into("<L", self.buf.buffer, payload_pointer_offset, payload_offset)
+        pack_into("<L", self.buf.buffer, Rel.POINTER_TABLE_POINTER_OFFSET, pointer_table_offset)
+        pack_into("<L", self.buf.buffer, Rel.POINTER_COUNT_OFFSET, pointer_count)
+        pack_into("<L", self.buf.buffer, Rel.PAYLOAD_POINTER_OFFSET, payload_offset)
+        self.payload_offset = payload_offset
         return self.buf.buffer
+
+    @staticmethod
+    def read_from(data: bytearray) -> "Rel":
+        (pointer_count, ) = unpack_from("<L", data, Rel.POINTER_COUNT_OFFSET)
+        (pointer_table_offset, ) = unpack_from("<L", data, Rel.POINTER_TABLE_POINTER_OFFSET)
+        (payload_offset, ) = unpack_from("<L", data, Rel.PAYLOAD_POINTER_OFFSET)
+        rel = Rel(buf=ResizableBuffer(buf=data))
+        rel.payload_offset = payload_offset
+
+        pointer_size = 2
+        prev_pointer_offset = 0
+        for i in range(pointer_count):
+            table_entry_offset = pointer_table_offset + i * pointer_size
+            (rel_offset, ) = unpack_from("<H", data, table_entry_offset)
+            abs_offset = prev_pointer_offset + rel_offset * 4
+            prev_pointer_offset = abs_offset
+            rel.pointer_offsets.append(abs_offset)
+
+        return rel
+    
+    def read(self, cls, offset=0):
+        return cls.deserialize_from(self.buf.buffer, offset)
+    
+    def is_nonnull_pointer(self, offset: int) -> bool:
+        return offset in self.pointer_offsets
+            

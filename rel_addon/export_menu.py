@@ -10,7 +10,7 @@ from . import r_rel, n_rel, c_rel
 class ExportRel(Operator, ExportHelper):
     """Export render geometry (n.rel), collision geometry (c.rel), and minimap geometry (r.rel)"""
     bl_idname = "export_scene.rel"
-    bl_label = "Export RELs (PSO)"
+    bl_label = "Export REL(s)"
 
     # ExportHelper mixin class uses this
     filename_ext = ".rel"

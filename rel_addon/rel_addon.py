@@ -3,6 +3,7 @@ import bpy
 from bpy.props import PointerProperty
 from bpy.app.handlers import persistent, load_post
 from .export_menu import ExportRel, CUSTOM_PT_export_settings
+from .import_menu import ImportRel
 from .properties_menu import (
     MeshRelSettings,
     MeshRelSettingsPanel,
@@ -26,13 +27,21 @@ if "unittest" not in sys.modules.keys():
     load_post.append(convert_legacy_properties)
 
 
+import_export_description = "Phantasy Star Online map (.rel)"
+
+
 def menu_func_export(self, context):
-    self.layout.operator(ExportRel.bl_idname, text="Export RELs (PSO)")
+    self.layout.operator(ExportRel.bl_idname, text=import_export_description)
+
+
+def menu_func_import(self, context):
+    self.layout.operator(ImportRel.bl_idname, text=import_export_description)
 
 
 classes = [
     ExportRel,
     CUSTOM_PT_export_settings,
+    ImportRel,
     MeshRelSettings,
     MeshRelSettingsPanel,
     MeshNrelSettingsPanel,
@@ -46,6 +55,7 @@ def register():
     for clazz in classes:
         bpy.utils.register_class(clazz)
     bpy.types.TOPBAR_MT_file_export.append(menu_func_export)
+    bpy.types.TOPBAR_MT_file_import.append(menu_func_import)
     bpy.types.Object.rel_settings = PointerProperty(type=MeshRelSettings)
 
 
@@ -53,4 +63,5 @@ def unregister():
     for clazz in classes:
         bpy.utils.unregister_class(clazz)
     bpy.types.TOPBAR_MT_file_export.remove(menu_func_export)
+    bpy.types.TOPBAR_MT_file_import.remove(menu_func_import)
     del bpy.types.Object.rel_settings
