@@ -1,4 +1,4 @@
-import os, pathlib
+import os, pathlib, marshal, json, hashlib
 from dataclasses import dataclass, field
 import bpy
 import bpy.types
@@ -125,6 +125,24 @@ def generate_mipmaps(image: bpy.types.Image, has_alpha: bool) -> list[bpy.types.
     return levels
 
 
+def texture_checksum(tex: Texture) -> str:
+    data = list(tex.image.pixels)
+    data.append(float(tex.generate_mipmaps))
+    return hashlib.md5(marshal.dumps(data)).hexdigest()
+
+
+def load_cache_index(path: str) -> dict[str, str]:
+    if os.path.isfile(path):
+        with open(path, "r") as f:
+            return json.load(f)
+    return dict()
+
+
+def save_cache_index(path: str, index: dict[str, str]):
+    with open(path, "w") as f:
+        json.dump(index, f)
+
+
 def get_cached_xvr(path: str) -> Xvr:
     magic_size = 4
     print("XVM Notice: Loading texture from cache '{}'".format(path))
@@ -161,6 +179,8 @@ def make_xvr(tex: Texture) -> Xvr:
         for level in mipmaps:
             level_width, level_height = level.size
             data += dxt.compress_image(list(level.pixels), level_width, level_height, level.channels, has_alpha)
+            # Remove temporary copies because Blender automatically saves them in the scene
+            bpy.data.images.remove(level)
     return Xvr(
         body_size=len(data) + Xvr.type_size() - 4,
         id=tex.id,
@@ -177,20 +197,26 @@ def write(path: str, textures: list[Texture]):
     cache_dir = "pso-blender-cache"
     xvr_ext = ".xvr"
     (dirname, _) = os.path.split(path)
+    # Index contains checksums of files
+    cache_index_path = os.path.join(dirname, cache_dir, "index.json")
+    cache_index = load_cache_index(cache_index_path)
     xvrs = []
     for tex in textures:
         (_, basename) = os.path.split(tex.image.filepath)
         cache_dir_path = os.path.join(dirname, cache_dir)
         pathlib.Path(cache_dir_path).mkdir(exist_ok=True) # Create dir if not exist
-        cached_xvr_path = os.path.join(cache_dir_path, basename + xvr_ext)
-        # Try to load cached textures from destination directory
-        if os.path.isfile(cached_xvr_path):
+        xvr_basename = basename + xvr_ext
+        cached_xvr_path = os.path.join(cache_dir_path, xvr_basename)
+        # Try to load cached textures from destination directory if pixels have not changed
+        if os.path.isfile(cached_xvr_path) and (checksum := texture_checksum(tex)) and checksum == cache_index.get(xvr_basename):
             xvr = get_cached_xvr(cached_xvr_path)
             xvr.id = tex.id # Use new texture id
         else:
             xvr = make_xvr(tex)
             cache_xvr(cached_xvr_path, xvr)
+        cache_index[xvr_basename] = checksum
         xvrs.append(xvr)
+    save_cache_index(cache_index_path, cache_index)
     buf = ResizableBuffer(0)
     # I'll just explicitly write the lists because it's easier
     xvm = Xvm(
