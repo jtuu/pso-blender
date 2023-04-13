@@ -126,7 +126,7 @@ def write(path: str, objects: list[bpy.types.Object]):
         vertex_array = VertexArray()
         geom_center = util.from_blender_axes(util.geometry_world_center(obj))
 
-        collision_flags = make_collision_flags(obj)
+        collision_flags = make_collision_flags(obj.rel_settings)
 
         node = CrelNode(
             flags=collision_flags,
