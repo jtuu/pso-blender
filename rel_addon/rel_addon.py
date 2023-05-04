@@ -11,6 +11,7 @@ from .properties_menu import (
     MeshCrelSettingsPanel,
     MeshRrelSettingsPanel)
 
+
 if "unittest" not in sys.modules.keys():
     @persistent
     def convert_legacy_properties(arg):
@@ -24,7 +25,6 @@ if "unittest" not in sys.modules.keys():
             if "rrel" in obj:
                 obj.rel_settings.is_rrel = True
                 del obj["rrel"]
-    load_post.append(convert_legacy_properties)
 
 
 import_export_description = "Phantasy Star Online map (.rel)"
@@ -57,6 +57,7 @@ def register():
     bpy.types.TOPBAR_MT_file_export.append(menu_func_export)
     bpy.types.TOPBAR_MT_file_import.append(menu_func_import)
     bpy.types.Object.rel_settings = PointerProperty(type=MeshRelSettings)
+    load_post.append(convert_legacy_properties)
 
 
 def unregister():
@@ -65,3 +66,4 @@ def unregister():
     bpy.types.TOPBAR_MT_file_export.remove(menu_func_export)
     bpy.types.TOPBAR_MT_file_import.remove(menu_func_import)
     del bpy.types.Object.rel_settings
+    load_post.remove(convert_legacy_properties)

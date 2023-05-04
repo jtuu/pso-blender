@@ -13,12 +13,38 @@ class MeshRelSettings(bpy.types.PropertyGroup):
     is_transparent: BoolProperty(name="Transparent", default=False)
     generate_mipmaps: BoolProperty(name="Generate Mipmaps (slow)", default=False, description="Generate mipmaps for any textures that this mesh uses")
     is_chunk: BoolProperty(name="Chunk marker", description="Object is used as a chunk marker. All meshes are automatically assigned to the nearest chunk marker.", default=False)
-    collision_flags_value: IntProperty(default=0, get=lambda self: c_rel.make_collision_flags(self))
-    camera_collides: BoolProperty(name="Camera", default=True)
-    players_and_monsters_collide: BoolProperty(name="Players and monsters", default=True)
-    blocks_projectiles: BoolProperty(name="Projectiles", default=True)
-    only_players_collide: BoolProperty(name="Only players", default=False)
-    blocks_monster_vision: BoolProperty(name="Monster vision", default=False)
+    # Can't figure out how to get IntProperty to support a 32bit unsigned value so I'll just split it into two 16bit values
+    collision_flags_value1: IntProperty(default=0, subtype="UNSIGNED")
+    collision_flags_value2: IntProperty(default=0, subtype="UNSIGNED")
+
+
+def make_collision_flag_props():
+    prop_keys = []
+
+    def make_flag_getter(flag):
+        return lambda settings: (settings.collision_flags_value1 & flag) != 0
+
+    def make_flag_setter(flag):
+        return lambda settings, value: (
+                setattr(settings, "collision_flags_value1", settings.collision_flags_value1 | flag)
+                if value else
+                setattr(settings, "collision_flags_value1", settings.collision_flags_value1 & ~flag))
+
+    for flag, name in c_rel.COLLISION_FLAG_NAMES.items():
+        key = "collision_flag_" + hex(flag)
+        label = "{} ({})".format(name, hex(flag))
+        prop = BoolProperty(
+            name=label,
+            default=False,
+            get=make_flag_getter(flag),
+            set=make_flag_setter(flag))
+        MeshRelSettings.__annotations__[key] = prop
+        prop_keys.append(key)
+    
+    return prop_keys
+
+
+COLLISION_FLAG_PROP_KEYS = make_collision_flag_props()
 
 
 class MeshNrelSettingsPanel(Panel):
@@ -70,12 +96,10 @@ class MeshCrelSettingsPanel(Panel):
         self.layout.use_property_decorate = False
         settings = context.object.rel_settings
         self.layout.active = settings.is_crel
-        self.layout.row(align=True).label(text="Flags: " + hex(settings.collision_flags_value))
-        col = self.layout.column(heading="Collides with:", align=True)
-        col.prop(settings, "camera_collides")
-        col.prop(settings, "players_and_monsters_collide")
-        col.prop(settings, "blocks_projectiles")
-        col.prop(settings, "blocks_monster_vision")
+        self.layout.row(align=True).label(text="Collision flags: " + hex(settings.collision_flags_value1 | (settings.collision_flags_value2 << 16)))
+        col = self.layout.column(heading="Collision type:", align=True)
+        for prop_key in COLLISION_FLAG_PROP_KEYS:
+            col.prop(settings, prop_key)
 
 
 class MeshRrelSettingsPanel(Panel):
