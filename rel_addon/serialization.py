@@ -1,6 +1,6 @@
 import sys
 from dataclasses import dataclass, field
-from typing import NewType, get_type_hints, get_args, get_origin
+from typing import NewType, get_type_hints, get_args, get_origin, Annotated
 from struct import pack_into, unpack_from, error as StructError
 from warnings import warn
 from operator import itemgetter
@@ -8,6 +8,10 @@ from operator import itemgetter
 
 def typehint_of_name(name: str, ns=sys.modules[__name__]):
     return get_type_hints(ns).get(name)
+
+
+def FixedArray(tp, length):
+    return NewType("FixedArray", Annotated[tp, length])
 
 
 @dataclass
@@ -169,28 +173,47 @@ class Serializable:
             return should_continue
         is_list = type(value) is list
         is_tuple = type(value) is tuple
-        if is_list or is_tuple:
+        is_fixed_array = tp.__name__ == "FixedArray"
+        if is_list or is_tuple or is_fixed_array:
             container_type = None
+            length = 0
             # Need to get typehint to get the element type
-            if name is not None:
+            if is_fixed_array:
+                (elem_type, expected_length) = get_args(tp.__supertype__)
+                elem_types = [elem_type] * expected_length
+                length = expected_length
+                if is_list:
+                    if len(value) > expected_length:
+                        warn("FixedArray member '{}' of class '{}' was truncated during serialization".format(name, cls.__name__))
+                        value = value[:expected_length]
+                    elif len(value) < expected_length:
+                        # Pad with zeros
+                        value += [0] * (expected_length - len(value))
+            elif name is not None:
                 container_type = typehint_of_name(name, cls)
+                elem_types = get_args(container_type)
+                length = len(value)
             elif tp is not None:
                 container_type = tp
-            elem_types = get_args(container_type)
+                elem_types = get_args(container_type)
+                length = len(value)
             if len(elem_types) < 1:
                 # Can't continue
                 cls._warn_unserializable(name)
                 return None
             should_continue = True
-            for i in range(len(value)):
+            for i in range(length):
                 # Get type of current element
                 # Lists have one element type, tuples have n
                 type_idx = 0
                 if is_tuple:
                     type_idx = i
                 elem_type = elem_types[type_idx]
+                elem_value = None
+                if hasattr(value, "__getitem__"):
+                    elem_value = value[i]
                 # Visit element
-                should_continue = cls._visit(value[i], ctx, visitor, tp=elem_type)
+                should_continue = cls._visit(elem_value, ctx, visitor, name=name, tp=elem_type)
                 if not should_continue:
                     break
             return should_continue
@@ -201,10 +224,10 @@ class Serializable:
         elif get_origin(value) is not list and get_origin(value) is not tuple:
             # Value is primitive
             # Determine format from name or type
-            if name is not None:
-                fmt = cls.format_of_member(name)
-            elif tp is not None:
+            if tp is not None:
                 fmt = Numeric.format_of_type(tp)
+            elif name is not None:
+                fmt = cls.format_of_member(name)
             if fmt is None:
                 # Can't continue
                 cls._warn_unserializable(name)
@@ -248,7 +271,10 @@ class Serializable:
         if fmt:
             sz = Numeric.size_of_format(fmt)
             (value, ) = unpack_from(fmt, ctx["buf"], ctx["offset"])
-            ctx["result"].__dict__[name] = value
+            if type(ctx["result"].__dict__[name]) is list:
+                ctx["result"].__dict__[name].append(value)
+            else:
+                ctx["result"].__dict__[name] = value
             ctx["offset"] += sz
         return True
     

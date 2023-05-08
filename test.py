@@ -1,6 +1,6 @@
 from dataclasses import dataclass, field
 import unittest
-from rel_addon.serialization import Serializable, Numeric, ResizableBuffer
+from rel_addon.serialization import Serializable, Numeric, ResizableBuffer, FixedArray
 
 
 U8 = Numeric.U8
@@ -45,6 +45,12 @@ class MyPointingStruct(Serializable):
 class MyBufferStruct(Serializable):
     data_count: U32 = 0
     data: bytearray = field(default_factory=bytearray)
+
+
+@dataclass
+class MyFixedArrayStruct(Serializable):
+    name: FixedArray(U8, 16) = field(default_factory=list)
+    flags: U32 = 0
 
 
 class TestSerialization(unittest.TestCase):
@@ -97,6 +103,15 @@ class TestSerialization(unittest.TestCase):
         self.assertEqual(buf.buffer[5], 0xad)
         self.assertEqual(buf.buffer[6], 0xbe)
         self.assertEqual(buf.buffer[7], 0xef)
+    
+    def test_fixed_array(self):
+        buf = ResizableBuffer(0)
+        item = MyFixedArrayStruct(name=list(str.encode("deadbeef")), flags=0xdeadbeef)
+        item.serialize_into(buf)
+        self.assertEqual(buf.buffer[0:8], b"deadbeef")
+        self.assertEqual(buf.buffer[8:16], b"\0\0\0\0\0\0\0\0")
+        self.assertEqual(buf.buffer[16:24], b"\xef\xbe\xad\xde")
+
 
 class TestDeserialization(unittest.TestCase):
     def test_basic_struct_deserialize(self):
@@ -107,6 +122,11 @@ class TestDeserialization(unittest.TestCase):
         self.assertEqual(result.y, 1.0)
         self.assertEqual(result.z, 1.0)
 
+    def test_fixed_array(self):
+        buf = b"deadbeef\0\0\0\0\0\0\0\0\xef\xbe\xad\xde"
+        (result, offset) = MyFixedArrayStruct.deserialize_from(buf)
+        self.assertEqual(bytes(result.name[0:8]).decode(), "deadbeef")
+        self.assertEqual(result.flags, 0xdeadbeef)
 
 if __name__ == '__main__':
     unittest.main()
