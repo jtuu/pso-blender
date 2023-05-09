@@ -1,4 +1,3 @@
-import sys
 import bpy
 from bpy.props import PointerProperty
 from bpy.app.handlers import persistent, load_post
@@ -12,7 +11,9 @@ from .properties_menu import (
     MeshRrelSettingsPanel)
 
 
-if "unittest" not in sys.modules.keys():
+# @persistent causes an error when this file is executed with fake-bpy-module (unit tests)
+# We can detect if the code is actually running inside blender by checking if bpy.app.binary_path is set
+if bpy.app.binary_path:
     @persistent
     def convert_legacy_properties(arg):
         for obj in bpy.data.objects:
