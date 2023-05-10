@@ -1,6 +1,6 @@
 from dataclasses import dataclass, field
 import unittest
-from rel_addon.serialization import Serializable, Numeric, ResizableBuffer, FixedArray
+from pso_blender.serialization import Serializable, Numeric, ResizableBuffer, FixedArray
 
 
 U8 = Numeric.U8
@@ -127,6 +127,7 @@ class TestDeserialization(unittest.TestCase):
         (result, offset) = MyFixedArrayStruct.deserialize_from(buf)
         self.assertEqual(bytes(result.name[0:8]).decode(), "deadbeef")
         self.assertEqual(result.flags, 0xdeadbeef)
+
 
 if __name__ == '__main__':
     unittest.main()

@@ -18,7 +18,7 @@ extend-ignore =
     # No lambdas
     E731
 per-file-ignores =
-    rel_addon/export_menu.py: F722 F821
-    rel_addon/import_menu.py: F722 F821
-    rel_addon/properties_menu.py: F722 F821
-    rel_addon/__init__.py: F401 F403 F405
+    pso_blender/rel_export_menu.py: F722 F821
+    pso_blender/rel_import_menu.py: F722 F821
+    pso_blender/rel_properties_menu.py: F722 F821
+    pso_blender/__init__.py: F401 F403 F405

@@ -1,9 +1,9 @@
 import bpy
 from bpy.props import PointerProperty
 from bpy.app.handlers import persistent, load_post
-from .export_menu import ExportRel, CUSTOM_PT_export_settings
-from .import_menu import ImportRel
-from .properties_menu import (
+from .rel_export_menu import ExportRel, CUSTOM_PT_export_settings
+from .rel_import_menu import ImportRel
+from .rel_properties_menu import (
     MeshRelSettings,
     MeshRelSettingsPanel,
     MeshNrelSettingsPanel,
@@ -28,15 +28,15 @@ if bpy.app.binary_path:
                 del obj["rrel"]
 
 
-import_export_description = "Phantasy Star Online map (.rel)"
+rel_import_export_description = "Phantasy Star Online map (.rel)"
 
 
 def menu_func_export(self, context):
-    self.layout.operator(ExportRel.bl_idname, text=import_export_description)
+    self.layout.operator(ExportRel.bl_idname, text=rel_import_export_description)
 
 
 def menu_func_import(self, context):
-    self.layout.operator(ImportRel.bl_idname, text=import_export_description)
+    self.layout.operator(ImportRel.bl_idname, text=rel_import_export_description)
 
 
 classes = [
