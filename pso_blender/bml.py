@@ -1,9 +1,12 @@
+import os
 from dataclasses import dataclass, field
 from struct import unpack_from
 import bpy
 from warnings import warn
 from .serialization import Serializable, Numeric, FixedArray
 from . import prs
+from .nj import nj_to_blender_mesh
+from .xj import xj_to_blender_mesh
 
 
 U8 = Numeric.U8
@@ -72,9 +75,39 @@ class BmlItem:
     texture_list = None
     texture_archive = None
     animation = None
+    pointer_table: list[int] = field(default_factory=list)
 
 
-def read(path: str) -> list[BmlItem]:
+def parse_pof0(file_data: bytearray, iff_offset: int, iff_size: int) -> list[int]:
+    pointer_table = []
+    pof_offset = iff_offset + 8
+    prev_ptr = 0
+    
+    while pof_offset < iff_offset + 8 + iff_size:
+        pof_byte = file_data[pof_offset]
+        pof_flags = pof_byte & 0xc0
+        pof_offset += 1
+        if (pof_byte & 0xc0) == 0:
+            # Not a valid flagset
+            continue
+        elif pof_flags == 0x40:
+            # Nothing to do I guess?
+            break
+        elif pof_flags == 0x80:
+            # Two byte pointer
+            pof_offset += 2 - 1
+            (relative_offset, ) = unpack_from("<H", file_data, pof_offset)
+        elif pof_flags == 0xc0:
+            # Four byte Pointer
+            pof_offset += 4 - 1
+            (relative_offset, ) = unpack_from("<L", file_data, pof_offset)
+        ptr = prev_ptr + relative_offset * 4
+        pointer_table.append(ptr)
+        prev_ptr = ptr
+    return pointer_table
+
+
+def parse_bml(path: str) -> list[BmlItem]:
     with open(path, "rb") as f:
         bml = bytearray(f.read())
 
@@ -101,6 +134,7 @@ def read(path: str) -> list[BmlItem]:
             iff_type = bytes(file_data[iff_offset:iff_offset + 4]).decode()
             (iff_size, ) = unpack_from("<L", file_data[iff_offset + 4:iff_offset + 8])
             iff_body = file_data[iff_offset + 8:iff_offset + 8 + iff_size]
+
             if iff_type == "NJCM":
                 item.model = iff_body
             elif iff_type == "NJTL":
@@ -108,9 +142,10 @@ def read(path: str) -> list[BmlItem]:
             elif iff_type == "NMDM":
                 item.animation = iff_body
             elif iff_type == "POF0":
-                pass # Some kind of pointer relocation table, not sure if we need it when reading
+                item.pointer_table = parse_pof0(file_data, iff_offset, iff_size)
             else:
                 warn("BML Warning: File '{}' has an unknown IFF chunk type '{}'".format(item.name, iff_type))
+
             iff_offset += iff_size + 8
 
         file_offset += align_up(file_description.compressed_size, file_alignment)
@@ -123,5 +158,25 @@ def read(path: str) -> list[BmlItem]:
     return items
 
 
-def to_blender(bml_contents: dict[str, bytearray]) -> bpy.types.Collection:
-    pass
+def to_blender_mesh(bml_item: BmlItem) -> bpy.types.Object:
+    if bml_item.name.endswith(".xj"):
+        return xj_to_blender_mesh(bml_item.name, bml_item.model, 0)
+    if bml_item.name.endswith(".nj"):
+        return nj_to_blender_mesh(bml_item.name, bml_item.model, 0)
+    raise Exception("BML Error: Failed to identify model format. Expected filename to end with '.nj' or '.xj', but it was '{}'.".format(bml_item.name))
+
+
+def read(path: str) -> bpy.types.Collection:
+    bml = parse_bml(path)
+    filename = os.path.basename(path)
+    collection = bpy.data.collections.new(filename)
+
+    for bml_item in bml:
+        if bml_item.model:
+            obj = to_blender_mesh(bml_item)
+            if obj:
+                collection.objects.link(obj)
+        else:
+            warn("BML Warning: Skipping unsupported file '{}'.".format(bml_item.name))
+
+    return collection

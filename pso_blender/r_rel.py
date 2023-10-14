@@ -1,9 +1,15 @@
 import math
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 import bpy.types
 from .rel import Rel
 from .serialization import Serializable, Numeric
 from . import util, tristrip
+from .nj import (
+    Vertex,
+    Mesh,
+    VertexListNode,
+    IndexArray,
+    IndexListNode)
 
 
 U8 = Numeric.U8
@@ -17,52 +23,6 @@ Ptr32 = Numeric.Ptr32
 NULLPTR = Numeric.NULLPTR
 
 
-@dataclass
-class Vertex(Serializable):
-    x: F32 = 0.0
-    y: F32 = 0.0
-    z: F32 = 0.0
-    nx: F32 = 0.0
-    ny: F32 = 0.0
-    nz: F32 = 0.0
-
-
-@dataclass
-class VertexListNode(Serializable):
-    flags: U16 = 0 # 0xff=terminator
-    # Offset to next VertexListNode, BUT divided by four
-    offset_to_next: U16 = 0
-    unk1: U16 = 0
-    vertex_count: U16 = 0
-    vertices: list[Vertex] = field(default_factory=list)
-
-
-@dataclass
-class IndexArray(Serializable):
-    length: U16 = 0
-    indices: list[U16] = field(default_factory=list)
-
-
-@dataclass
-class IndexListNode(Serializable):
-    flags: U16 = 0
-    # Offset to next IndexListNode, BUT divided by two
-    offset_to_next: U16 = 0
-    strip_count: U16 = 0
-    indices: list[IndexArray] = field(default_factory=lambda: [IndexArray(length=0)])
-
-
-@dataclass
-class Mesh(Serializable):
-    vertex_list: Ptr32 = NULLPTR # VertexListNode
-    index_list: Ptr32 = NULLPTR # IndexListNode
-    x: F32 = 0.0
-    y: F32 = 0.0
-    z: F32 = 0.0
-
-
-# Dunno what the point of this extra level of indirection is.
-# Maybe to have more than one mesh per room?
 @dataclass
 class MeshContainer(Serializable):
     unk1: U32 = 0

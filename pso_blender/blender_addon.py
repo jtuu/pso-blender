@@ -9,6 +9,7 @@ from .rel_properties_menu import (
     MeshNrelSettingsPanel,
     MeshCrelSettingsPanel,
     MeshRrelSettingsPanel)
+from .bml_import_menu import ImportBml
 
 
 # @persistent causes an error when this file is executed with fake-bpy-module (unit tests)
@@ -37,6 +38,7 @@ def menu_func_export(self, context):
 
 def menu_func_import(self, context):
     self.layout.operator(ImportRel.bl_idname, text=rel_import_export_description)
+    self.layout.operator(ImportBml.bl_idname, text="BML (PSO)")
 
 
 classes = [
@@ -47,7 +49,8 @@ classes = [
     MeshRelSettingsPanel,
     MeshNrelSettingsPanel,
     MeshCrelSettingsPanel,
-    MeshRrelSettingsPanel
+    MeshRrelSettingsPanel,
+    ImportBml
 ]
 
 

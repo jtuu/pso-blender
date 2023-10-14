@@ -285,6 +285,18 @@ class Serializable:
         ctx = {"result": result, "offset": offset, "buf": buf}
         cls._visit(cls, ctx, Serializable._deserializer_visitor)
         return (result, ctx["offset"])
+    
+    @classmethod
+    def read_sequence(cls, buf, offset, count) -> list:
+        items = []
+        if count < 1:
+            return items
+        size = cls.type_size()
+        for _ in range(count):
+            (item, _) = cls.deserialize_from(buf, offset)
+            items.append(item)
+            offset += size
+        return items
         
 
 @dataclass
