@@ -299,7 +299,7 @@ def write_index_buffers(rel: Rel, nrel_mesh: Mesh, material_strips: list[list[li
                 if is_transparent:
                     blend_modes = (4, 1) # D3DBLEND_SRCALPHA, D3DBLEND_ONE
                 rs_args = make_renderstate_args(
-                    texture_ids[material_idx],
+                    texture_id=texture_ids[material_idx],
                     blend_modes=blend_modes,
                     texture_addressing=1,  # D3DTADDRESS_MIRROR
                     lighting=False) # Map geometry is generally not affected by lighting

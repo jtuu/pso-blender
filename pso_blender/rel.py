@@ -40,7 +40,7 @@ class Rel:
         pointer_count = len(self.pointer_offsets)
         pointer_size = 2
         pointer_table_size = pointer_count * pointer_size
-        self.buf.grow(pointer_table_size)
+        self.buf.grow_by(pointer_table_size)
         prev_pointer_offset = 0
         pointer_table_offset = self.buf.offset
         # Pointer table contains locations of pointers within the payload
@@ -51,7 +51,7 @@ class Rel:
             prev_pointer_offset = abs_offset
             self.buf.pack("<H", rel_offset)
         # Create trailer
-        self.buf.grow(0x20)
+        self.buf.grow_by(0x20)
         pack_into("<L", self.buf.buffer, Rel.POINTER_TABLE_POINTER_OFFSET, pointer_table_offset)
         pack_into("<L", self.buf.buffer, Rel.POINTER_COUNT_OFFSET, pointer_count)
         pack_into("<L", self.buf.buffer, Rel.PAYLOAD_POINTER_OFFSET, payload_offset)

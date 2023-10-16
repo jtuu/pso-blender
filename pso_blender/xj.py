@@ -205,11 +205,12 @@ class NinjaEvalFlag:
     MODIFIER = 0b1000000000
 
 
-def make_renderstate_args(texture_id: int, *args, texture_addressing=None, blend_modes=None, lighting=True) -> list[RenderStateArgs]:
-    rs_args = [
-        RenderStateArgs(
+def make_renderstate_args(*args, texture_id=None, texture_addressing=None, blend_modes=None, lighting=True) -> list[RenderStateArgs]:
+    rs_args = []
+    if texture_id is not None:
+        rs_args.append(RenderStateArgs(
             state_type=RenderStateType.TEXTURE_ID,
-            arg1=texture_id)]
+            arg1=texture_id))
     if blend_modes is not None:
         rs_args.append(RenderStateArgs(
             state_type=RenderStateType.BLEND_MODE,

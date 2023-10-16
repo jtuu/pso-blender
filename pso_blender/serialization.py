@@ -74,9 +74,14 @@ class ResizableBuffer:
         self.capacity = size
         self.offset = 0
     
-    def grow(self, by):
+    def grow_by(self, by: int):
         self.buffer += bytearray(by)
         self.capacity += by
+    
+    def grow_to(self, to: int):
+        if self.capacity > to:
+            raise Exception("Failed to grow ResizableBuffer because it is already bigger than requested size")
+        self.grow_by(to - self.capacity)
     
     def append(self, other: bytearray) -> int:
         offset_before = self.offset
@@ -95,7 +100,7 @@ class ResizableBuffer:
         # Grow if needed
         if item_size > remaining:
             need = item_size - remaining
-            self.grow(need)
+            self.grow_by(need)
         pack_into(fmt, self.buffer, self.offset, *vals)
         self.offset += item_size
         return offset_before
