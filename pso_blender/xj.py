@@ -291,6 +291,8 @@ def create_tristrips_grouped_by_material(obj: bpy.types.Object, blender_mesh: bp
 
 
 def write_index_buffers(destination: util.AbstractFileArchive, xj_mesh: Mesh, material_strips: list[list[list[int]]], texture_ids: list[int], is_transparent: bool):
+    # Texture IDs must be 0-based for the render settings
+    texture_id_base = 0 if len(texture_ids) < 1 else min(texture_ids)
     # One buffer per strip
     index_buffer_containers = []
     for (material_idx, strips) in enumerate(material_strips):
@@ -306,7 +308,7 @@ def write_index_buffers(destination: util.AbstractFileArchive, xj_mesh: Mesh, ma
                 if is_transparent:
                     blend_modes = (4, 1) # D3DBLEND_SRCALPHA, D3DBLEND_ONE
                 rs_args = make_renderstate_args(
-                    texture_id=texture_ids[material_idx],
+                    texture_id=texture_ids[material_idx] - texture_id_base,
                     blend_modes=blend_modes,
                     texture_addressing=1,  # D3DTADDRESS_MIRROR
                     lighting=False) # Map geometry is generally not affected by lighting

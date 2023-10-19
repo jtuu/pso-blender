@@ -4,20 +4,8 @@ from struct import unpack_from, pack_into
 import bpy
 from warnings import warn
 from .serialization import Serializable, Numeric, FixedArray, ResizableBuffer
-from . import prs, tristrip, util
+from . import prs, util, njcm, xvm, xj
 from .nj import nj_to_blender_mesh
-from .xj import (
-    xj_to_blender_mesh,
-    make_renderstate_args,
-    MeshTreeNode,
-    Mesh,
-    VertexBufferContainer,
-    IndexBufferContainer,
-    VertexBufferFormat4,
-    VertexFormat4,
-    IndexBuffer,
-    NinjaEvalFlag
-)
 
 
 U8 = Numeric.U8
@@ -194,7 +182,7 @@ def parse_bml(path: str) -> list[BmlItem]:
 
 def to_blender_mesh(bml_item: BmlItem) -> bpy.types.Object:
     if bml_item.name.endswith(".xj"):
-        return xj_to_blender_mesh(bml_item.name, bml_item.model, 0)
+        return xj.xj_to_blender_mesh(bml_item.name, bml_item.model, 0)
     if bml_item.name.endswith(".nj"):
         return nj_to_blender_mesh(bml_item.name, bml_item.model, 0)
     raise Exception("BML Error: Failed to identify model format. Expected filename to end with '.nj' or '.xj', but it was '{}'.".format(bml_item.name))
@@ -216,7 +204,7 @@ def read(path: str) -> bpy.types.Collection:
     return collection
 
 
-class BmlChunk:
+class BmlChunk(util.AbstractFileArchive):
     ALIGNMENT = 4
 
     def __init__(self, type_name: str):
@@ -280,9 +268,10 @@ class BmlChunk:
         return self.buf.buffer
 
 
-def write(path: str, objects: list[bpy.types.Object]):
+def write(bml_path: str, xvm_path: str, objects: list[bpy.types.Object]):
     bml_buf = ResizableBuffer(0)
     files_buf = ResizableBuffer(0)
+    textures = xvm.assign_texture_identifiers(objects)
 
     # Write BML header at the beginning of the file
     bml_header = BmlHeader(
@@ -300,8 +289,8 @@ def write(path: str, objects: list[bpy.types.Object]):
         njcm_chunk = BmlChunk("NJCM")
 
         # Root node must to be the first thing after the chunk header
-        mesh_node = MeshTreeNode(
-            eval_flags=NinjaEvalFlag.UNIT_ANG | NinjaEvalFlag.UNIT_SCL | NinjaEvalFlag.BREAK,
+        mesh_node = njcm.MeshTreeNode(
+            eval_flags=xj.NinjaEvalFlag.UNIT_ANG | xj.NinjaEvalFlag.UNIT_SCL | xj.NinjaEvalFlag.BREAK,
             mesh=0xdeadbeef, # Will be rewritten at the end
             scale_x=1.0,
             scale_y=1.0,
@@ -309,52 +298,7 @@ def write(path: str, objects: list[bpy.types.Object]):
         mesh_pointer_offset = njcm_chunk.write(mesh_node) + IffHeader.type_size() + 4
 
         blender_mesh = obj.to_mesh()
-        mesh = Mesh()
-        # Create vertex buffer
-        vertex_buffer = VertexBufferFormat4()
-        for vertex in blender_mesh.vertices:
-            fixed_vert = util.from_blender_axes(vertex.co)
-            vertex_buffer.vertices.append(VertexFormat4(
-                x=fixed_vert[0],
-                y=fixed_vert[1],
-                z=fixed_vert[2]))
-        mesh.vertex_buffers = njcm_chunk.write(VertexBufferContainer(
-            vertex_format=4,
-            vertex_buffer=njcm_chunk.write(vertex_buffer),
-            vertex_size=VertexFormat4.type_size(),
-            vertex_count=len(vertex_buffer.vertices)))
-        mesh.vertex_buffer_count = 1
-
-        # Create index buffers
-        index_buffer_containers = []
-        strips = tristrip.stripify(util.mesh_faces(blender_mesh), stitchstrips=True)
-        for strip in strips:
-            rs_args = make_renderstate_args(
-                blend_modes=(4, 7),
-                texture_addressing=1,
-                lighting=True)
-            first_rs_arg_ptr = NULLPTR
-            for rs_arg in rs_args:
-                ptr = njcm_chunk.write(rs_arg)
-                if first_rs_arg_ptr == NULLPTR:
-                    first_rs_arg_ptr = ptr
-            # Write Indices
-            buf_ptr = njcm_chunk.write(IndexBuffer(indices=strip), True)
-            index_buffer_containers.append(IndexBufferContainer(
-                index_buffer=buf_ptr,
-                index_count=len(strip),
-                renderstate_args=first_rs_arg_ptr,
-                renderstate_args_count=len(rs_args)))
-        
-        # Index buffer containers need to be written back to back
-        first_index_buffer_container_ptr = None
-        for buf in index_buffer_containers:
-            ptr = njcm_chunk.write(buf)
-            if first_index_buffer_container_ptr is None:
-                first_index_buffer_container_ptr = ptr
-
-        mesh.index_buffer_count = len(index_buffer_containers)
-        mesh.index_buffers = first_index_buffer_container_ptr
+        mesh = xj.make_mesh(njcm_chunk, obj, blender_mesh, textures)
 
         # Write mesh pointer into root node
         mesh_ptr = njcm_chunk.write(mesh)
@@ -384,5 +328,8 @@ def write(path: str, objects: list[bpy.types.Object]):
     # Write files after descriptions
     bml_buf.append(files_buf.buffer)
     
-    with open(path, "wb") as f:
+    with open(bml_path, "wb") as f:
         f.write(bml_buf.buffer)
+
+    if xvm_path and len(textures) > 0:
+        xvm.write(xvm_path, list(textures.values()))

@@ -95,8 +95,10 @@ class Texture:
 
 
 def assign_texture_identifiers(objects: list[bpy.types.Object]) -> dict[str, Texture]:
+    import time
+    # Create "unique" texture IDs
+    id_counter = int(time.time()) & 0xffffffff
     textures = dict()
-    id_counter = 0
     for obj in objects:
         tex_images = util.get_object_diffuse_textures(obj)
         for tex_image in tex_images:
