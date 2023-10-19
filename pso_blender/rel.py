@@ -1,9 +1,10 @@
 from struct import pack_into, unpack_from
 from warnings import warn
 from .serialization import Serializable, ResizableBuffer
+from .util import AbstractFileArchive
 
 
-class Rel:
+class Rel(AbstractFileArchive):
     ALIGNMENT = 4
     POINTER_TABLE_POINTER_OFFSET = -0x20
     POINTER_COUNT_OFFSET = -0x1c

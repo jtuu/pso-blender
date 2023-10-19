@@ -94,6 +94,35 @@ class Texture:
     image: bpy.types.Image
 
 
+def assign_texture_identifiers(objects: list[bpy.types.Object]) -> dict[str, Texture]:
+    textures = dict()
+    id_counter = 0
+    for obj in objects:
+        tex_images = util.get_object_diffuse_textures(obj)
+        for tex_image in tex_images:
+            w, h = tex_image.size
+            # If the image file is not found on disk the texture will still exist but without pixels
+            if w == 0 or h == 0 or len(tex_image.pixels) < 1:
+                raise Exception("Error in texture '{}': Texture has no pixels. Does the image file exist on disk?".format(tex_image.filepath))
+            else:
+                # Deduplicate textures
+                image_abs_path = tex_image.filepath_from_user()
+                if image_abs_path not in textures:
+                    textures[image_abs_path] = Texture(id=id_counter, image=tex_image, generate_mipmaps=obj.rel_settings.generate_mipmaps)
+                    id_counter += 1
+    return textures
+
+
+def get_texture_identifiers(textures: dict[str, Texture], obj: bpy.types.Object) -> list[int]:
+    texture_ids = []
+    tex_images = util.get_object_diffuse_textures(obj)
+    for tex_image in tex_images:
+        path = tex_image.filepath_from_user()
+        if path in textures:
+            texture_ids.append(textures[path].id)
+    return texture_ids
+
+
 def generate_mipmaps(image: bpy.types.Image, has_alpha: bool) -> list[bpy.types.Image]:
     mip_dim, _ = image.size
     levels = []
@@ -208,7 +237,8 @@ def write(path: str, textures: list[Texture]):
         xvr_basename = basename + xvr_ext
         cached_xvr_path = os.path.join(cache_dir_path, xvr_basename)
         # Try to load cached textures from destination directory if pixels have not changed
-        if os.path.isfile(cached_xvr_path) and (checksum := texture_checksum(tex)) and checksum == cache_index.get(xvr_basename):
+        checksum = texture_checksum(tex)
+        if os.path.isfile(cached_xvr_path) and checksum == cache_index.get(xvr_basename):
             xvr = get_cached_xvr(cached_xvr_path)
             xvr.id = tex.id # Use new texture id
         else:

@@ -2,6 +2,8 @@ import math
 from mathutils import Vector
 import bpy.types 
 from dataclasses import field
+from abc import ABC, abstractmethod
+from .serialization import Serializable
 
 
 def mesh_faces(mesh: bpy.types.Mesh) -> list[tuple[int, int, int]]:
@@ -56,3 +58,9 @@ def geometry_world_center(obj: bpy.types.Object) -> Vector:
 
 def clamp(n, min_val, max_val):
     return max(min(n, max_val), min_val)
+
+
+class AbstractFileArchive(ABC):
+    @abstractmethod
+    def write(self, item: Serializable, ensure_aligned=False) -> int:
+        pass
