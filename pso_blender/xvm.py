@@ -115,14 +115,20 @@ def assign_texture_identifiers(objects: list[bpy.types.Object]) -> dict[str, Tex
     return textures
 
 
-def get_texture_identifiers(textures: dict[str, Texture], obj: bpy.types.Object) -> list[int]:
+def get_texture_identifiers(textures: dict[str, Texture], obj: bpy.types.Object) -> tuple[int, list[int]]:
+    """Returns base ID and IDs belonging to object's texture"""
+    texture_id_base = float("inf")
+    for key in textures:
+        if textures[key].id < texture_id_base:
+            texture_id_base = textures[key].id
+
     texture_ids = []
     tex_images = util.get_object_diffuse_textures(obj)
     for tex_image in tex_images:
         path = tex_image.filepath_from_user()
         if path in textures:
             texture_ids.append(textures[path].id)
-    return texture_ids
+    return (texture_id_base, texture_ids)
 
 
 def generate_mipmaps(image: bpy.types.Image, has_alpha: bool) -> list[bpy.types.Image]:

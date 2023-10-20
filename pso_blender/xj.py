@@ -290,9 +290,8 @@ def create_tristrips_grouped_by_material(obj: bpy.types.Object, blender_mesh: bp
     return material_strips
 
 
-def write_index_buffers(destination: util.AbstractFileArchive, xj_mesh: Mesh, material_strips: list[list[list[int]]], texture_ids: list[int], is_transparent: bool):
+def write_index_buffers(destination: util.AbstractFileArchive, xj_mesh: Mesh, material_strips: list[list[list[int]]], texture_id_base: int, texture_ids: list[int], is_transparent: bool):
     # Texture IDs must be 0-based for the render settings
-    texture_id_base = 0 if len(texture_ids) < 1 else min(texture_ids)
     # One buffer per strip
     index_buffer_containers = []
     for (material_idx, strips) in enumerate(material_strips):
@@ -351,10 +350,10 @@ def make_mesh(destination: util.AbstractFileArchive, obj: bpy.types.Object, blen
         if len(vertex_colors.data) != len(blender_mesh.loop_triangles) * 3:
             raise Exception("XJ error in object '{}': Vertex color data length mismatch. Remember to triangulate your mesh before painting.".format(obj.name))
     # Write various mesh data
-    texture_ids = xvm.get_texture_identifiers(textures, obj)
+    (texture_id_base, texture_ids) = xvm.get_texture_identifiers(textures, obj)
     write_vertex_buffer(destination, obj, blender_mesh, mesh, has_textures, vertex_colors)
     material_strips = create_tristrips_grouped_by_material(obj, blender_mesh, has_textures)
-    write_index_buffers(destination, mesh, material_strips, texture_ids, obj.rel_settings.is_transparent)
+    write_index_buffers(destination, mesh, material_strips, texture_id_base, texture_ids, obj.rel_settings.is_transparent)
     return mesh
 
 
