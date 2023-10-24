@@ -4,6 +4,7 @@ A Blender plugin that can export the following file formats for Phantasy Star On
 * **n.rel**: Area map render geometry
 * **c.rel**: Area map collision geometry
 * **r.rel**: Minimap geometry
+* **BML/XJ**: NPCs and objects
 
 Exporting a file with the name `foo.rel` will write three files named `foon.rel`, `fooc.rel`, and `foor.rel`.
 
