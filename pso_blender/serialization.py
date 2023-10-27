@@ -80,9 +80,9 @@ class ResizableBuffer:
     
     def grow_to(self, to: int):
         if self.capacity > to:
-            raise Exception("Failed to grow ResizableBuffer because it is already bigger than requested size")
+            raise Exception("Failed to grow ResizableBuffer because it is already bigger than requested size ({}/{})".format(self.capacity, to))
         self.grow_by(to - self.capacity)
-    
+
     def append(self, other: bytearray) -> int:
         offset_before = self.offset
         self.buffer += other

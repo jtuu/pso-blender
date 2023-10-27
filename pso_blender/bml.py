@@ -313,6 +313,7 @@ def write(bml_path: str, xvm_path: str, objects: list[bpy.types.Object]):
 
         # Add padding between files
         files_buf.grow_to(files_sum_before + align_up(compressed_size, file_alignment))
+        files_buf.seek_to_end()
 
         # Write file descriptions after BML header
         file_desc = FileDescription(
@@ -325,6 +326,7 @@ def write(bml_path: str, xvm_path: str, objects: list[bpy.types.Object]):
     
     # Add padding after file descriptions
     bml_buf.grow_to(align_up(bml_header.file_count * 0x40, 0x800))
+    files_buf.seek_to_end()
     # Write files after descriptions
     bml_buf.append(files_buf.buffer)
     
