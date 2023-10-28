@@ -1,12 +1,13 @@
 import os, math
 from mathutils import Vector
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from warnings import warn
 import bpy.types
 from .rel import Rel
-from .serialization import Serializable, Numeric
+from .serialization import Serializable, Numeric, AlignedString
 from . import util, xvm, xj
 from .njcm import MeshTreeNode
+from .njtl import TextureList, TextureListEntry
 
 
 U8 = Numeric.U8
@@ -56,29 +57,6 @@ class Chunk(Serializable):
     def __eq__(self, other):
         return self.id == other.id
 
-class AlignedString(Serializable):
-    chars: list[U8] = field(default_factory=list)
-
-    def __init__(self, s: str):
-        self.chars = list(str.encode(s))
-        self.chars.append(0)
-
-    def serialize_into(self, buf, unused):
-        return super().serialize_into(buf, Rel.ALIGNMENT)
-
-
-@dataclass
-class TextureData2(Serializable):
-    name: Ptr32 = NULLPTR # AlignedString
-    unk1: Ptr32 = NULLPTR # Set at runtime
-    data: Ptr32 = NULLPTR # Set at runtime
-
-
-@dataclass
-class TextureData1(Serializable):
-    data: Ptr32 = NULLPTR # TextureData2
-    data_count: U32 = 0
-
 
 @dataclass
 class NrelFmt2(Serializable):
@@ -88,7 +66,7 @@ class NrelFmt2(Serializable):
     unk2: U16 = 0
     radius: F32 = 0.0 # Overwritten at runtime
     chunks: Ptr32 = NULLPTR # Chunk
-    texture_data: Ptr32 = NULLPTR # TextureData1
+    texture_data: Ptr32 = NULLPTR # TextureList
 
 
 class NrelError(Exception):
@@ -211,18 +189,18 @@ def write(nrel_path: str, xvm_path: str, objects: list[bpy.types.Object], chunk_
     nrel.chunks = first_chunk_ptr
     # Texture metadata
     if len(textures) > 0:
-        first_texdata2_ptr = NULLPTR
-        tex_data1 = TextureData1(data_count=len(textures))
+        first_texlist_entry_ptr = NULLPTR
+        texlist = TextureList(count=len(textures))
         for tex_path in textures:
             # There might be a limit on the length of these
             (dirname, basename) = os.path.split(tex_path)
             tex_name = basename[0:10]
-            name_ptr = rel.write(AlignedString(tex_name))
-            ptr = rel.write(TextureData2(name=name_ptr))
-            if first_texdata2_ptr == NULLPTR:
-                first_texdata2_ptr = ptr
-        tex_data1.data = first_texdata2_ptr
-        nrel.texture_data = rel.write(tex_data1)
+            name_ptr = rel.write(AlignedString(tex_name, Rel.ALIGNMENT))
+            ptr = rel.write(TextureListEntry(name=name_ptr))
+            if first_texlist_entry_ptr == NULLPTR:
+                first_texlist_entry_ptr = ptr
+        texlist.elements = first_texlist_entry_ptr
+        nrel.texture_data = rel.write(texlist)
     # Write files
     file_contents = rel.finish(rel.write(nrel))
     with open(nrel_path, "wb") as f:

@@ -11,6 +11,8 @@ from .rel_properties_menu import (
     MeshRrelSettingsPanel)
 from .bml_import_menu import ImportBml
 from .bml_export_menu import ExportBml
+from .xj_import_menu import ImportXj
+from .xj_export_menu import ExportXj
 
 
 # @persistent causes an error when this file is executed with fake-bpy-module (unit tests)
@@ -32,16 +34,19 @@ if bpy.app.binary_path:
 
 rel_import_export_description = "Phantasy Star Online map (.rel)"
 bml_import_export_description = "BML (PSO)"
+xj_import_export_description = "XJ (PSO)"
 
 
 def menu_func_export(self, context):
     self.layout.operator(ExportRel.bl_idname, text=rel_import_export_description)
     self.layout.operator(ExportBml.bl_idname, text=bml_import_export_description)
+    self.layout.operator(ExportXj.bl_idname, text=xj_import_export_description)
 
 
 def menu_func_import(self, context):
     self.layout.operator(ImportRel.bl_idname, text=rel_import_export_description)
     self.layout.operator(ImportBml.bl_idname, text=bml_import_export_description)
+    self.layout.operator(ImportXj.bl_idname, text=xj_import_export_description)
 
 
 classes = [
@@ -54,7 +59,9 @@ classes = [
     MeshCrelSettingsPanel,
     MeshRrelSettingsPanel,
     ImportBml,
-    ExportBml
+    ExportBml,
+    ImportXj,
+    ExportXj
 ]
 
 

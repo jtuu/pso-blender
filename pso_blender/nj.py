@@ -1,4 +1,4 @@
-import bpy
+import bpy, warnings
 from dataclasses import dataclass, field
 from .serialization import Serializable, Numeric
 from .njcm import MeshTreeNode
@@ -77,9 +77,10 @@ class Mesh(Serializable):
         return (mesh, after)
 
 
-def nj_to_blender_mesh(name: str, buf: bytearray, offset: int) -> bpy.types.Object:
+def nj_to_blender_mesh(name: str, buf: bytearray, offset: int) -> bpy.types.Collection:
     (model, _) = MeshTreeNode.read_tree(Mesh, buf, offset)
     if model.mesh == NULLPTR:
         return None
-    
-
+    collection = bpy.data.collections.new(name)
+    warnings.warn("BML/NJ import is unimplemented")
+    return collection

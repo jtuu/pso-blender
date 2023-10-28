@@ -160,6 +160,8 @@ class Serializable:
     
     @classmethod
     def _visit(cls, value, ctx: dict, visitor, *args, name=None, tp=None) -> bool:
+        if name is not None and name.startswith("_"):
+            return True
         is_instance = isinstance(value, Serializable)
         is_class = type(value) is type and issubclass(value, Serializable)
         if is_instance or is_class:
@@ -308,3 +310,15 @@ class Serializable:
 class AlignmentHelper(Serializable):
     wrapped: Serializable
     padding: list[Numeric.U8] = field(default_factory=list)
+
+
+class AlignedString(Serializable):
+    chars: list[Numeric.U8] = field(default_factory=list)
+
+    def __init__(self, s: str, alignment: int):
+        self.chars = list(str.encode(s))
+        self.chars.append(0)
+        self._alignment = alignment
+
+    def serialize_into(self, buf, unused):
+        return super().serialize_into(buf, self._alignment)

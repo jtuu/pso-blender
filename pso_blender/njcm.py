@@ -35,7 +35,7 @@ class MeshTreeNode(Serializable):
         if node.mesh != NULLPTR:
             node.mesh = mesh_type.deserialize_from(buf, node.mesh)[0]
         if node.child != NULLPTR:
-            node.child = MeshTreeNode.deserialize_from(buf, node.child)[0]
+            node.child = MeshTreeNode.read_tree(mesh_type, buf, node.child)[0]
         if node.next != NULLPTR:
-            node.next = MeshTreeNode.deserialize_from(buf, node.next)[0]
+            node.next = MeshTreeNode.read_tree(mesh_type, buf, node.next)[0]
         return (node, after)

@@ -64,3 +64,11 @@ class AbstractFileArchive(ABC):
     @abstractmethod
     def write(self, item: Serializable, ensure_aligned=False) -> int:
         pass
+
+
+def bytes_to_string(b: list[int]) -> str:
+    return bytes(b).decode().rstrip("\0")
+
+
+def align_up(n: int, to: int) -> int:
+    return (n + to - 1) // to * to

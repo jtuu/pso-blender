@@ -1,9 +1,11 @@
-import bpy
+import bpy, os
 from dataclasses import dataclass, field
-from .serialization import Serializable, Numeric
-from struct import unpack_from
+from .serialization import Serializable, Numeric, AlignedString
+from struct import unpack_from, pack_into
 from .njcm import MeshTreeNode
 from . import tristrip, util, xvm
+from .iff import IffHeader, IffChunk, parse_pof0
+from .njtl import TextureList, TextureListEntry
 
 
 U8 = Numeric.U8
@@ -379,32 +381,133 @@ def make_renderstate_args(*args, texture_id=None, texture_addressing=None, blend
     return rs_args
 
 
-def xj_to_blender_mesh(name: str, buf: bytearray, offset: int) -> bpy.types.Object:
+def xj_to_blender_mesh(name: str, buf: bytearray, offset: int) -> bpy.types.Collection:
     (model, _) = MeshTreeNode.read_tree(Mesh, buf, offset)
-    if model.mesh == NULLPTR:
-        return None
+    collection = bpy.data.collections.new(name)
 
-    vertices = []
-    faces = []
+    # Find all meshes in model tree
+    search_stack = [model]
+    while len(search_stack) > 0:
+        model = search_stack.pop()
 
-    for vertex_buffer in model.mesh.vertex_buffers:
-        for vertex in vertex_buffer.vertex_buffer:
-            vertices.append((vertex.x, vertex.z, vertex.y))
+        if model == NULLPTR:
+            continue
+        
+        # Search children and siblings
+        search_stack.append(model.child)
+        search_stack.append(model.next)
 
-    for index_buffer in model.mesh.index_buffers + model.mesh.alpha_index_buffers:
-        indices = index_buffer.index_buffer
-        swap = False
-        for i in range(len(indices) - 2):
-            i0 = indices[i + 0]
-            i1 = indices[i + 1]
-            i2 = indices[i + 2]
-            if swap:
-                i1, i2 = i2, i1
-            swap = not swap
-            faces.append((i0, i1, i2))
+        if model.mesh == NULLPTR:
+            continue
 
-    blender_mesh = bpy.data.meshes.new("mesh_" + name)
-    blender_mesh.from_pydata(vertices, [], faces)
-    blender_mesh.update()
-    obj = bpy.data.objects.new(name, blender_mesh)
-    return obj
+        vertices = []
+        faces = []
+
+        # Get vertices
+        for vertex_buffer in model.mesh.vertex_buffers:
+            for vertex in vertex_buffer.vertex_buffer:
+                vertices.append((vertex.x, vertex.z, vertex.y))
+
+        # Get indices
+        for index_buffer in model.mesh.index_buffers + model.mesh.alpha_index_buffers:
+            indices = index_buffer.index_buffer
+            swap = False
+            for i in range(len(indices) - 2):
+                # Parsing a triangle strip
+                i0 = indices[i + 0]
+                i1 = indices[i + 1]
+                i2 = indices[i + 2]
+                if swap:
+                    i1, i2 = i2, i1
+                swap = not swap
+                faces.append((i0, i1, i2))
+
+        # Put geometry into blender object
+        blender_mesh = bpy.data.meshes.new("mesh_" + name)
+        blender_mesh.from_pydata(vertices, [], faces)
+        blender_mesh.update()
+        obj = bpy.data.objects.new(name, blender_mesh)
+        collection.objects.link(obj)
+    return collection
+
+
+def write(xj_path: str, xvm_path: str, obj: bpy.types.Object):
+    textures = xvm.assign_texture_identifiers([obj])
+
+    njcm_chunk = IffChunk("NJCM")
+    # Root node must to be the first thing after the chunk header
+    mesh_node = MeshTreeNode(
+        eval_flags=NinjaEvalFlag.UNIT_ANG | NinjaEvalFlag.UNIT_SCL | NinjaEvalFlag.BREAK,
+        mesh=0xdeadbeef, # Will be rewritten at the end
+        scale_x=1.0,
+        scale_y=1.0,
+        scale_z=1.0)
+    mesh_pointer_offset = njcm_chunk.write(mesh_node) + IffHeader.type_size() + 4
+
+    blender_mesh = obj.to_mesh()
+    mesh = make_mesh(njcm_chunk, obj, blender_mesh, textures)
+
+    # Write mesh pointer into root node
+    mesh_ptr = njcm_chunk.write(mesh)
+    pack_into("<L", njcm_chunk.buf.buffer, mesh_pointer_offset, mesh_ptr)
+
+    # Chunk (+POF0) is done
+    xj_buf = njcm_chunk.finish()
+
+    if len(textures) > 0:
+        # Make NJTL chunk (doesn't contain pixel data)
+        njtl_chunk = IffChunk("NJTL")
+        texlist = TextureList(
+            elements=0xdeadbeef,
+            count=len(textures))
+        texlist_elements_offset = njtl_chunk.write(texlist) + IffHeader.type_size()
+
+        first_texlist_entry_ptr = NULLPTR
+        for tex_key in textures:
+            tex_name = textures[tex_key].image.name[0:31]
+            name_ptr = njtl_chunk.write(AlignedString(tex_name, IffChunk.ALIGNMENT))
+            ptr = njtl_chunk.write(TextureListEntry(name=name_ptr))
+            if first_texlist_entry_ptr == NULLPTR:
+                first_texlist_entry_ptr = ptr
+        # Rewrite pointer
+        pack_into("<L", njtl_chunk.buf.buffer, texlist_elements_offset, first_texlist_entry_ptr)
+
+        # Append NJTL
+        xj_buf += njtl_chunk.finish()
+
+    with open(xj_path, "wb") as f:
+        f.write(xj_buf)
+
+    if xvm_path and len(textures) > 0:
+        xvm.write(xvm_path, list(textures.values()))
+
+
+def read(path: str) -> list[bpy.types.Collection]:
+    filename = os.path.basename(path)
+    collections = []
+    chunk_header_size = IffHeader.type_size()
+
+    with open(path, "rb") as f:
+        file_contents = bytearray(f.read())
+
+    # Read iff chunks
+    chunk_offset = 0
+    prev_chunk_offset = None
+    prev_chunk_size = None
+    need_pof0 = False
+    while chunk_offset < len(file_contents):
+        (chunk_header, _) = IffHeader.deserialize_from(file_contents, offset=chunk_offset)
+        chunk_type = util.bytes_to_string(chunk_header.type_name)
+        if chunk_type == "NJCM":
+            need_pof0 = True
+        elif chunk_type == "POF0":
+            if need_pof0:
+                # Could maybe check if pointers to 0 are valid?
+                _ = parse_pof0(filename, file_contents, prev_chunk_offset, prev_chunk_size, chunk_offset, chunk_header.body_size)
+                # Read a NJCM
+                collections.append(xj_to_blender_mesh(filename, file_contents[prev_chunk_offset + chunk_header_size:], 0))
+                need_pof0 = False
+        prev_chunk_offset = chunk_offset
+        prev_chunk_size = chunk_header.body_size
+        chunk_offset += chunk_header.body_size + chunk_header_size
+    return collections

@@ -1,11 +1,12 @@
-import os
 from dataclasses import dataclass, field
-from struct import unpack_from, pack_into
+from struct import pack_into
 import bpy
 from warnings import warn
 from .serialization import Serializable, Numeric, FixedArray, ResizableBuffer
-from . import prs, util, njcm, xvm, xj
+from . import prs, njcm, xvm, xj
 from .nj import nj_to_blender_mesh
+from .iff import IffChunk, IffHeader, parse_pof0
+from .util import align_up, bytes_to_string
 
 
 U8 = Numeric.U8
@@ -22,12 +23,6 @@ NULLPTR = Numeric.NULLPTR
 class CompressionType:
     NONE = 0
     PRS = ord("P")
-
-
-@dataclass
-class IffHeader(Serializable):
-    type_name: FixedArray(U8, 4) = field(default_factory=list)
-    body_size: U32 = 0
 
 
 @dataclass
@@ -65,59 +60,14 @@ class FileDescription(Serializable):
     unk4: U32 = 0
 
 
-def bytes_to_string(b: list[int]) -> str:
-    return bytes(b).decode().rstrip("\0")
-
-
-def align_up(n: int, to: int) -> int:
-    return (n + to - 1) // to * to
-
-
 @dataclass
 class BmlItem:
     name: str
-    model = None
+    models: list[bytearray] = field(default_factory=list)
     texture_list = None
     texture_archive = None
     animation = None
     pointer_table: list[int] = field(default_factory=list)
-
-
-def parse_pof0(filename: str, file_data: bytearray, prev_chunk_offset: int, prev_chunk_size: int, pof0_offset: int, pof0_size: int) -> list[int]:
-    "POF0 chunk contains a pointer rewrite table for the preceding chunk"
-    header_size = IffHeader.type_size()
-    pointer_table = []
-    read_cursor = pof0_offset + header_size
-    pointer_offset = prev_chunk_offset + header_size
-    
-    while read_cursor < pof0_offset + header_size + pof0_size:
-        pof_byte = file_data[read_cursor]
-        pof_flags = pof_byte & (0x40 | 0x80)
-        if pof_flags == 0:
-            # Not a valid flag, but not necessarily malformed
-            read_cursor += 1
-            continue
-        elif pof_flags == 0x40:
-            # One byte offset
-            relative_offset = file_data[read_cursor] & 0x3f
-            read_cursor += 1
-        elif pof_flags == 0x80:
-            # Two byte offset
-            relative_offset = (file_data[read_cursor] & 0x3f) << 0x8 | file_data[read_cursor + 1]
-            read_cursor += 2
-        elif pof_flags == (0x40 | 0x80):
-            # Four byte offset
-            relative_offset = (
-                (file_data[read_cursor] & 0x3f) << 0x18 |
-                file_data[read_cursor + 1] << 0x10 |
-                file_data[read_cursor + 2] << 0x8 |
-                file_data[read_cursor + 3])
-            read_cursor += 4
-        # Offsets are relative to the previous offset and divided by four (similar to REL)
-        pointer_offset += relative_offset * 4
-        (pointer, ) = unpack_from("<L", file_data, offset=pointer_offset)
-        pointer_table.append((pointer_offset, pointer))
-    return pointer_table
 
 
 def parse_bml(path: str) -> list[BmlItem]:
@@ -152,7 +102,7 @@ def parse_bml(path: str) -> list[BmlItem]:
             chunk_body = file_data[chunk_offset + chunk_header_size:chunk_offset + chunk_header_size + chunk_header.body_size]
 
             if chunk_type == "NJCM":
-                item.model = chunk_body
+                item.models.append(chunk_body)
             elif chunk_type == "NJTL":
                 item.texture_list = chunk_body
             elif chunk_type == "NMDM":
@@ -180,92 +130,28 @@ def parse_bml(path: str) -> list[BmlItem]:
     return items
 
 
-def to_blender_mesh(bml_item: BmlItem) -> bpy.types.Object:
+def to_blender_mesh(bml_item: BmlItem) -> list[bpy.types.Collection]:
+    collections = []
     if bml_item.name.endswith(".xj"):
-        return xj.xj_to_blender_mesh(bml_item.name, bml_item.model, 0)
-    if bml_item.name.endswith(".nj"):
-        return nj_to_blender_mesh(bml_item.name, bml_item.model, 0)
-    raise Exception("BML Error: Failed to identify model format. Expected filename to end with '.nj' or '.xj', but it was '{}'.".format(bml_item.name))
+        for model in bml_item.models:
+            collections.append(xj.xj_to_blender_mesh(bml_item.name, model, 0))
+    elif bml_item.name.endswith(".nj"):
+        for model in bml_item.models:
+            collections.append(nj_to_blender_mesh(bml_item.name, model, 0))
+    else:
+        raise Exception("BML Error: Failed to identify model format. Expected filename to end with '.nj' or '.xj', but it was '{}'.".format(bml_item.name))
+    return collections
 
 
-def read(path: str) -> bpy.types.Collection:
+def read(path: str) -> list[bpy.types.Collection]:
     bml = parse_bml(path)
-    filename = os.path.basename(path)
-    collection = bpy.data.collections.new(filename)
-
+    collections = []
     for bml_item in bml:
-        if bml_item.model:
-            obj = to_blender_mesh(bml_item)
-            if obj:
-                collection.objects.link(obj)
+        if len(bml_item.models) > 0:
+            collections += to_blender_mesh(bml_item)
         else:
             warn("BML Warning: Skipping unsupported file '{}'.".format(bml_item.name))
-
-    return collection
-
-
-class BmlChunk(util.AbstractFileArchive):
-    ALIGNMENT = 4
-
-    def __init__(self, type_name: str):
-        self.buf = ResizableBuffer(0)
-        self.pointer_offsets: list[int] = []
-        self.warned_misalignment = False
-        header = IffHeader(
-            type_name=list(bytes(type_name, "ascii")),
-            body_size=0xdeadbeef) # Body size is not known yet, we will write it here at the end
-        header.serialize_into(self.buf)
-
-    def write(self, item: Serializable, ensure_aligned=False) -> int:
-        header_size = IffHeader.type_size()
-        # Subtract header to make pointers relative to body
-        item_offset = item.serialize_into(self.buf, BmlChunk.ALIGNMENT if ensure_aligned else None) - header_size
-        if not self.warned_misalignment and self.buf.offset % BmlChunk.ALIGNMENT != 0:
-            self.warned_misalignment = True
-            warn("BML warning: Potential misalignment after writing \"{}\"".format(type(item).__name__))
-        # Remember where pointers are written
-        for member_offset in item.nonnull_pointer_member_offsets():
-            ptr_offset = item_offset + member_offset
-            if ptr_offset % BmlChunk.ALIGNMENT != 0:
-                raise Exception("BML error: Misaligned pointer in \"{}\" ({} + {})".format(type(item).__name__, item_offset, member_offset))
-            self.pointer_offsets.append(ptr_offset)
-        return item_offset
-    
-    def finish(self) -> bytearray:
-        size_control_1 = 0x40
-        size_control_2 = 0x80
-        size_control_4 = 0xc0
-        size_offset = 4
-        header_size = IffHeader.type_size()
-        # Write size of body into header
-        pack_into("<L", self.buf.buffer, size_offset, self.buf.offset - header_size)
-        # Write pointer table header
-        pof0_offset = self.buf.offset
-        pof0_header = IffHeader(
-            type_name=list(bytes("POF0", "ascii")),
-            body_size=0xdeadbeef) # Body size is not known yet, we will write it here at the end
-        pof0_header.serialize_into(self.buf)
-        # Write pointer table
-        self.pointer_offsets.sort()
-        prev_pointer_offset = 0
-        for abs_offset in self.pointer_offsets:
-            rel_offset = (abs_offset - prev_pointer_offset) // 4
-            prev_pointer_offset = abs_offset
-            # Add pointer size control flag based on how big the pointer is
-            if rel_offset < size_control_1:
-                rel_offset |= size_control_1
-                self.buf.pack(">B", rel_offset)
-            elif rel_offset < (size_control_1 << 0x8):
-                rel_offset |= size_control_2 << 0x8
-                self.buf.pack(">H", rel_offset)
-            elif rel_offset < (size_control_1 << 0x18):
-                rel_offset |= size_control_4 << 0x18
-                self.buf.pack(">L", rel_offset)
-            else:
-                raise Exception("BML error: Gap between pointers is too big ({})".format(abs_offset - prev_pointer_offset))
-        # Write POF0 body size
-        pack_into("<L", self.buf.buffer, pof0_offset + size_offset, self.buf.offset - pof0_offset - header_size)
-        return self.buf.buffer
+    return collections
 
 
 def write(bml_path: str, xvm_path: str, objects: list[bpy.types.Object]):
@@ -286,7 +172,7 @@ def write(bml_path: str, xvm_path: str, objects: list[bpy.types.Object]):
     for obj in objects:
         chunks_size_sum = 0
         # Pointers must be relative to current chunk's body
-        njcm_chunk = BmlChunk("NJCM")
+        njcm_chunk = IffChunk("NJCM")
 
         # Root node must to be the first thing after the chunk header
         mesh_node = njcm.MeshTreeNode(
