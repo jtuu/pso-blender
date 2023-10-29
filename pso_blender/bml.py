@@ -157,7 +157,7 @@ def read(path: str) -> list[bpy.types.Collection]:
 def write(bml_path: str, xvm_path: str, objects: list[bpy.types.Object]):
     bml_buf = ResizableBuffer(0)
     files_buf = ResizableBuffer(0)
-    textures = xvm.assign_texture_identifiers(objects)
+    texture_man = xvm.TextureManager(objects)
 
     # Write BML header at the beginning of the file
     bml_header = BmlHeader(
@@ -184,7 +184,7 @@ def write(bml_path: str, xvm_path: str, objects: list[bpy.types.Object]):
         mesh_pointer_offset = njcm_chunk.write(mesh_node) + IffHeader.type_size() + 4
 
         blender_mesh = obj.to_mesh()
-        mesh = xj.make_mesh(njcm_chunk, obj, blender_mesh, textures)
+        mesh = xj.make_mesh(njcm_chunk, obj, blender_mesh, texture_man)
 
         # Write mesh pointer into root node
         mesh_ptr = njcm_chunk.write(mesh)
@@ -219,5 +219,5 @@ def write(bml_path: str, xvm_path: str, objects: list[bpy.types.Object]):
     with open(bml_path, "wb") as f:
         f.write(bml_buf.buffer)
 
-    if xvm_path and len(textures) > 0:
-        xvm.write(xvm_path, list(textures.values()))
+    if xvm_path and texture_man.has_textures():
+        xvm.write(xvm_path, texture_man.get_all_textures())

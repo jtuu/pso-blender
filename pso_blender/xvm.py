@@ -3,7 +3,8 @@ from dataclasses import dataclass, field
 import bpy
 import bpy.types
 from .serialization import Serializable, Numeric, ResizableBuffer
-from . import util, dxt
+from . import dxt
+from .util import magic_field, Texture, get_object_diffuse_textures
 
 
 U8 = Numeric.U8
@@ -46,7 +47,7 @@ class XvrFlags:
 
 @dataclass
 class Xvr(Serializable):
-    magic: list[U8] = util.magic_field("XVRT")
+    magic: list[U8] = magic_field("XVRT")
     body_size: U32 = 0
     flags: U32 = 0
     format: U32 = 0
@@ -68,7 +69,7 @@ class Xvr(Serializable):
 
 @dataclass
 class Xvm(Serializable):
-    magic: list[U8] = util.magic_field("XVMH")
+    magic: list[U8] = magic_field("XVMH")
     body_size: U32 = 0
     xvr_count: U32 = 0
     unk1: U32 = 0
@@ -87,48 +88,46 @@ class Xvm(Serializable):
     xvrs: list[Xvr] = field(default_factory=list)
 
 
-@dataclass
-class Texture:
-    id: int
-    generate_mipmaps: bool
-    image: bpy.types.Image
+class TextureManager:
+    def __init__(self, objects: list[bpy.types.Object]):
+        import time
+        # Create "unique" texture IDs
+        self._base_id = int(time.time()) & 0xffffffff
+        id_counter = self._base_id
+        # Use file path as an identifier for deduplicating textures
+        self._textures_by_path = dict()
+        for obj in objects:
+            textures = get_object_diffuse_textures(obj)
+            for tex in textures:
+                w, h = tex.image.size
+                # If the image file is not found on disk the texture will still exist but without pixels
+                if w == 0 or h == 0 or len(tex.image.pixels) < 1:
+                    raise Exception("Error in texture '{}': Texture has no pixels. Does the image file exist on disk?".format(tex.image.filepath))
+                else:
+                    # Deduplicate textures
+                    image_abs_path = tex.image.filepath_from_user()
+                    if image_abs_path not in self._textures_by_path:
+                        tex.id = id_counter # Assign ID
+                        self._textures_by_path[image_abs_path] = tex
+                        id_counter += 1
 
+    def get_object_textures(self, obj: bpy.types.Object) -> list[Texture]:
+        texture_ids = []
+        textures = get_object_diffuse_textures(obj)
+        for tex in textures:
+            path = tex.image.filepath_from_user()
+            if path in self._textures_by_path:
+                texture_ids.append(self._textures_by_path[path])
+        return texture_ids
+    
+    def get_all_textures(self) -> list[Texture]:
+        return list(self._textures_by_path.values())
 
-def assign_texture_identifiers(objects: list[bpy.types.Object]) -> dict[str, Texture]:
-    import time
-    # Create "unique" texture IDs
-    id_counter = int(time.time()) & 0xffffffff
-    textures = dict()
-    for obj in objects:
-        tex_images = util.get_object_diffuse_textures(obj)
-        for tex_image in tex_images:
-            w, h = tex_image.size
-            # If the image file is not found on disk the texture will still exist but without pixels
-            if w == 0 or h == 0 or len(tex_image.pixels) < 1:
-                raise Exception("Error in texture '{}': Texture has no pixels. Does the image file exist on disk?".format(tex_image.filepath))
-            else:
-                # Deduplicate textures
-                image_abs_path = tex_image.filepath_from_user()
-                if image_abs_path not in textures:
-                    textures[image_abs_path] = Texture(id=id_counter, image=tex_image, generate_mipmaps=obj.rel_settings.generate_mipmaps)
-                    id_counter += 1
-    return textures
-
-
-def get_texture_identifiers(textures: dict[str, Texture], obj: bpy.types.Object) -> tuple[int, list[int]]:
-    """Returns base ID and IDs belonging to object's texture"""
-    texture_id_base = float("inf")
-    for key in textures:
-        if textures[key].id < texture_id_base:
-            texture_id_base = textures[key].id
-
-    texture_ids = []
-    tex_images = util.get_object_diffuse_textures(obj)
-    for tex_image in tex_images:
-        path = tex_image.filepath_from_user()
-        if path in textures:
-            texture_ids.append(textures[path].id)
-    return (texture_id_base, texture_ids)
+    def get_base_id(self) -> int:
+        return self._base_id
+    
+    def has_textures(self) -> bool:
+        return len(self._textures_by_path) > 0
 
 
 def generate_mipmaps(image: bpy.types.Image, has_alpha: bool) -> list[bpy.types.Image]:

@@ -292,10 +292,12 @@ def create_tristrips_grouped_by_material(obj: bpy.types.Object, blender_mesh: bp
     return material_strips
 
 
-def write_index_buffers(destination: util.AbstractFileArchive, xj_mesh: Mesh, material_strips: list[list[list[int]]], texture_id_base: int, texture_ids: list[int], is_transparent: bool):
+def write_index_buffers(destination: util.AbstractFileArchive, obj: bpy.types.Object, xj_mesh: Mesh, material_strips: list[list[list[int]]], texture_man: xvm.TextureManager, is_transparent: bool):
     # Texture IDs must be 0-based for the render settings
     # One buffer per strip
     index_buffer_containers = []
+    textures = texture_man.get_object_textures(obj)
+    texture_id_base = texture_man.get_base_id()
     for (material_idx, strips) in enumerate(material_strips):
         for strip in strips:
             # Strips can be empty due to unused material slots, skip them
@@ -304,12 +306,12 @@ def write_index_buffers(destination: util.AbstractFileArchive, xj_mesh: Mesh, ma
             # Create render state args
             rs_arg_count = 0
             first_rs_arg_ptr = NULLPTR
-            if len(texture_ids) > 0:
+            if len(textures) > 0:
                 blend_modes = (4, 7) # D3DBLEND_SRCALPHA, D3DBLEND_INVSRCALPHA
                 if is_transparent:
                     blend_modes = (4, 1) # D3DBLEND_SRCALPHA, D3DBLEND_ONE
                 rs_args = make_renderstate_args(
-                    texture_id=texture_ids[material_idx] - texture_id_base,
+                    texture_id=textures[material_idx].id - texture_id_base,
                     blend_modes=blend_modes,
                     texture_addressing=1,  # D3DTADDRESS_MIRROR
                     lighting=False) # Map geometry is generally not affected by lighting
@@ -336,7 +338,7 @@ def write_index_buffers(destination: util.AbstractFileArchive, xj_mesh: Mesh, ma
     xj_mesh.alpha_index_buffers = first_index_buffer_container_ptr
 
 
-def make_mesh(destination: util.AbstractFileArchive, obj: bpy.types.Object, blender_mesh: bpy.types.Mesh, textures: dict[str, xvm.Texture]) -> Mesh:
+def make_mesh(destination: util.AbstractFileArchive, obj: bpy.types.Object, blender_mesh: bpy.types.Mesh, texture_man: xvm.TextureManager) -> Mesh:
     mesh = Mesh()
     tex_images = util.get_object_diffuse_textures(obj)
     has_textures = len(tex_images) > 0
@@ -352,10 +354,9 @@ def make_mesh(destination: util.AbstractFileArchive, obj: bpy.types.Object, blen
         if len(vertex_colors.data) != len(blender_mesh.loop_triangles) * 3:
             raise Exception("XJ error in object '{}': Vertex color data length mismatch. Remember to triangulate your mesh before painting.".format(obj.name))
     # Write various mesh data
-    (texture_id_base, texture_ids) = xvm.get_texture_identifiers(textures, obj)
     write_vertex_buffer(destination, obj, blender_mesh, mesh, has_textures, vertex_colors)
     material_strips = create_tristrips_grouped_by_material(obj, blender_mesh, has_textures)
-    write_index_buffers(destination, mesh, material_strips, texture_id_base, texture_ids, obj.rel_settings.is_transparent)
+    write_index_buffers(destination, obj, mesh, material_strips, texture_man, obj.rel_settings.is_transparent)
     return mesh
 
 
@@ -432,7 +433,8 @@ def xj_to_blender_mesh(name: str, buf: bytearray, offset: int) -> bpy.types.Coll
 
 
 def write(xj_path: str, xvm_path: str, obj: bpy.types.Object):
-    textures = xvm.assign_texture_identifiers([obj])
+    texture_man = xvm.TextureManager([obj])
+    textures = texture_man.get_object_textures(obj)
 
     njcm_chunk = IffChunk("NJCM")
     # Root node must to be the first thing after the chunk header
@@ -445,7 +447,7 @@ def write(xj_path: str, xvm_path: str, obj: bpy.types.Object):
     mesh_pointer_offset = njcm_chunk.write(mesh_node) + IffHeader.type_size() + 4
 
     blender_mesh = obj.to_mesh()
-    mesh = make_mesh(njcm_chunk, obj, blender_mesh, textures)
+    mesh = make_mesh(njcm_chunk, obj, blender_mesh, texture_man)
 
     # Write mesh pointer into root node
     mesh_ptr = njcm_chunk.write(mesh)
@@ -463,8 +465,8 @@ def write(xj_path: str, xvm_path: str, obj: bpy.types.Object):
         texlist_elements_offset = njtl_chunk.write(texlist) + IffHeader.type_size()
 
         first_texlist_entry_ptr = NULLPTR
-        for tex_key in textures:
-            tex_name = textures[tex_key].image.name[0:31]
+        for texture in textures:
+            tex_name = texture.image.name[0:31]
             name_ptr = njtl_chunk.write(AlignedString(tex_name, IffChunk.ALIGNMENT))
             ptr = njtl_chunk.write(TextureListEntry(name=name_ptr))
             if first_texlist_entry_ptr == NULLPTR:
@@ -478,8 +480,8 @@ def write(xj_path: str, xvm_path: str, obj: bpy.types.Object):
     with open(xj_path, "wb") as f:
         f.write(xj_buf)
 
-    if xvm_path and len(textures) > 0:
-        xvm.write(xvm_path, list(textures.values()))
+    if xvm_path and texture_man.has_textures():
+        xvm.write(xvm_path, textures)
 
 
 def read(path: str) -> list[bpy.types.Collection]:

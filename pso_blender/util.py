@@ -1,7 +1,7 @@
 import math
 from mathutils import Vector
 import bpy.types 
-from dataclasses import field
+from dataclasses import field, dataclass
 from abc import ABC, abstractmethod
 from .serialization import Serializable
 
@@ -14,7 +14,14 @@ def mesh_faces(mesh: bpy.types.Mesh) -> list[tuple[int, int, int]]:
     return faces
 
 
-def get_object_diffuse_textures(obj: bpy.types.Object) -> list[bpy.types.Image]:
+@dataclass
+class Texture:
+    id: int
+    generate_mipmaps: bool
+    image: bpy.types.Image
+
+
+def get_object_diffuse_textures(obj: bpy.types.Object) -> list[Texture]:
     """Assumes the first image node of each material is the correct one"""
     textures = []
     for mat_slot in obj.material_slots:
@@ -22,7 +29,7 @@ def get_object_diffuse_textures(obj: bpy.types.Object) -> list[bpy.types.Image]:
             continue
         for node in mat_slot.material.node_tree.nodes:
             if node.type == "TEX_IMAGE" and node.image:
-                textures.append(node.image)
+                textures.append(Texture(id=None, generate_mipmaps=mat_slot.material.xj_settings.generate_mipmaps, image=node.image))
                 break
     return textures
 

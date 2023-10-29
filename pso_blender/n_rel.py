@@ -1,4 +1,4 @@
-import os, math
+import math
 from mathutils import Vector
 from dataclasses import dataclass
 from warnings import warn
@@ -140,7 +140,7 @@ def assign_objects_to_chunks(objects: list[bpy.types.Object], chunk_markers: lis
 def write(nrel_path: str, xvm_path: str, objects: list[bpy.types.Object], chunk_markers: list[bpy.types.Object]):
     rel = Rel()
     nrel = NrelFmt2()
-    textures = xvm.assign_texture_identifiers(objects)
+    texture_man = xvm.TextureManager(objects)
     # Create chunks
     chunk_to_children = assign_objects_to_chunks(objects, chunk_markers)
     nrel.chunk_count = len(chunk_to_children)
@@ -169,7 +169,7 @@ def write(nrel_path: str, xvm_path: str, objects: list[bpy.types.Object], chunk_
                 x=mesh_world_pos.x - chunk_world_pos.x,
                 y=mesh_world_pos.y - chunk_world_pos.y,
                 z=mesh_world_pos.z - chunk_world_pos.z)
-            mesh = xj.make_mesh(rel, obj, blender_mesh, textures)
+            mesh = xj.make_mesh(rel, obj, blender_mesh, texture_man)
             mesh_node.mesh = rel.write(mesh)
             static_mesh_tree.root_node = rel.write(mesh_node)
             static_mesh_trees.append(static_mesh_tree)
@@ -188,13 +188,12 @@ def write(nrel_path: str, xvm_path: str, objects: list[bpy.types.Object], chunk_
             first_chunk_ptr = ptr
     nrel.chunks = first_chunk_ptr
     # Texture metadata
+    textures = texture_man.get_all_textures()
     if len(textures) > 0:
         first_texlist_entry_ptr = NULLPTR
         texlist = TextureList(count=len(textures))
-        for tex_path in textures:
-            # There might be a limit on the length of these
-            (dirname, basename) = os.path.split(tex_path)
-            tex_name = basename[0:10]
+        for tex in textures:
+            tex_name = tex.image.name[0:10]
             name_ptr = rel.write(AlignedString(tex_name, Rel.ALIGNMENT))
             ptr = rel.write(TextureListEntry(name=name_ptr))
             if first_texlist_entry_ptr == NULLPTR:
@@ -206,4 +205,4 @@ def write(nrel_path: str, xvm_path: str, objects: list[bpy.types.Object], chunk_
     with open(nrel_path, "wb") as f:
         f.write(file_contents)
     if xvm_path and len(textures) > 0:
-        xvm.write(xvm_path, list(textures.values()))
+        xvm.write(xvm_path, textures)
