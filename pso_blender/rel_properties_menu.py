@@ -10,8 +10,6 @@ class MeshRelSettings(bpy.types.PropertyGroup):
     is_rrel: BoolProperty(name="R.REL")
     receives_shadows: BoolProperty(name="Receives shadows", default=True)
     receives_fog: BoolProperty(name="Affected by fog", default=False)
-    is_transparent: BoolProperty(name="Transparent", default=False)
-    generate_mipmaps: BoolProperty(name="Generate Mipmaps (slow)", default=False, description="Generate mipmaps for any textures that this mesh uses")
     is_chunk: BoolProperty(name="Chunk marker", description="Object is used as a chunk marker. All meshes are automatically assigned to the nearest chunk marker.", default=False)
     # Can't figure out how to get IntProperty to support a 32bit unsigned value so I'll just split it into two 16bit values
     collision_flags_value1: IntProperty(default=0, subtype="UNSIGNED")
@@ -71,8 +69,6 @@ class MeshNrelSettingsPanel(Panel):
         col = self.layout.column(align=True)
         col.prop(settings, "receives_shadows")
         col.prop(settings, "receives_fog")
-        col.prop(settings, "is_transparent")
-        col.prop(settings, "generate_mipmaps")
 
 
 class MeshCrelSettingsPanel(Panel):

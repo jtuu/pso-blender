@@ -252,8 +252,8 @@ def write(path: str, textures: list[Texture]):
             xvr = make_xvr(tex)
             cache_xvr(cached_xvr_path, xvr)
         cache_index[xvr_basename] = checksum
+        save_cache_index(cache_index_path, cache_index)
         xvrs.append(xvr)
-    save_cache_index(cache_index_path, cache_index)
     buf = ResizableBuffer(0)
     # I'll just explicitly write the lists because it's easier
     xvm = Xvm(

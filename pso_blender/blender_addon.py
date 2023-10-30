@@ -13,6 +13,7 @@ from .bml_import_menu import ImportBml
 from .bml_export_menu import ExportBml
 from .xj_import_menu import ImportXj
 from .xj_export_menu import ExportXj
+from .xj_material_properties_menu import XjMaterialSettings, XjMaterialSettingsPanel
 
 
 # @persistent causes an error when this file is executed with fake-bpy-module (unit tests)
@@ -61,17 +62,25 @@ classes = [
     ImportBml,
     ExportBml,
     ImportXj,
-    ExportXj
+    ExportXj,
+    XjMaterialSettings,
+    XjMaterialSettingsPanel
 ]
 
 
 # Register and add to the "file selector" menu
 def register():
+    # Register classes
     for clazz in classes:
         bpy.utils.register_class(clazz)
+    # Add buttons to export and import menus
     bpy.types.TOPBAR_MT_file_export.append(menu_func_export)
     bpy.types.TOPBAR_MT_file_import.append(menu_func_import)
+    # Add settings panel to object menu
     bpy.types.Object.rel_settings = PointerProperty(type=MeshRelSettings)
+    # Add settings panel to material menu
+    bpy.types.Material.xj_settings = PointerProperty(type=XjMaterialSettings)
+    # Add hooks
     load_post.append(convert_legacy_properties)
 
 
@@ -81,4 +90,5 @@ def unregister():
     bpy.types.TOPBAR_MT_file_export.remove(menu_func_export)
     bpy.types.TOPBAR_MT_file_import.remove(menu_func_import)
     del bpy.types.Object.rel_settings
+    del bpy.types.Material.xj_settings
     load_post.remove(convert_legacy_properties)

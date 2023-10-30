@@ -25,4 +25,5 @@ per-file-ignores =
     pso_blender/xj_import_menu.py: F722 F821
     pso_blender/xj_export_menu.py: F722 F821
     pso_blender/rel_properties_menu.py: F722 F821
+    pso_blender/xj_material_properties_menu.py: F722 F821
     pso_blender/__init__.py: F401 F403 F405

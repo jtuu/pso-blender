@@ -140,13 +140,44 @@ class VertexBufferContainer(Serializable):
 
 
 @dataclass
+class BlendMode:
+    # Not the actual d3d enum values, but indices into an array containing the enum values
+    D3DBLEND_ZERO = 0
+    D3DBLEND_ONE = 1
+    D3DBLEND_SRCCOLOR = 2
+    D3DBLEND_SRCALPHA = 3
+    D3DBLEND_SRCALPHA = 4
+    D3DBLEND_INVSRCALPHA = 5
+    D3DBLEND_DESTALPHA = 6
+    D3DBLEND_INVDESTALPHA = 7
+    D3DBLEND_DESTCOLOR = 8
+    D3DBLEND_INVDESTCOLOR = 9
+
+
+@dataclass
+class TextureAddressingMode:
+    D3DTADDRESS_WRAP = 3
+    D3DTADDRESS_MIRROR = 4
+    D3DTADDRESS_CLAMP = 5
+    D3DTADDRESS_BORDER = 6
+    D3DTADDRESS_MIRRORONCE = 7
+
+
+@dataclass
+class MaterialColorSource:
+    D3DMCS_MATERIAL = 0
+    D3DMCS_COLOR1 = 1
+    D3DMCS_COLOR2 = 3
+
+
+@dataclass
 class RenderStateType:
     BLEND_MODE = 2
     TEXTURE_ID = 3
     TEXTURE_ADDRESSING = 4
     MATERIAL = 5
     LIGHTING = 6
-    TRANSFORM = 7
+    CAMERA_SPACE_NORMALS = 7
     MATERIAL_SOURCE = 8
 
 
@@ -273,17 +304,31 @@ def write_vertex_buffer(destination: util.AbstractFileArchive, obj: bpy.types.Ob
         vertex_count=len(vertex_buffer.vertices)))
 
 
-def create_tristrips_grouped_by_material(obj: bpy.types.Object, blender_mesh: bpy.types.Mesh, has_textures: bool) -> list[list[list[int]]]:
+class MaterialStrips:
+    def __init__(self, material_index: int, material: bpy.types.Material, strips: list[list[int]]):
+        self.material_index = material_index
+        self.renderstate_args = make_renderstate_args(
+            blend_modes=(material.xj_settings.src_blend, material.xj_settings.dst_blend),
+            texture_addressing=(material.xj_settings.tex_addr_u, material.xj_settings.tex_addr_v),
+            lighting=material.xj_settings.lighting,
+            material=(material.xj_settings.material1, material.xj_settings.material2),
+            camera_space_normals=material.xj_settings.camera_space_normals,
+            diffuse_color_source=material.xj_settings.diffuse_color_source)
+        self.strips = strips
+
+
+def create_tristrips_grouped_by_material(obj: bpy.types.Object, blender_mesh: bpy.types.Mesh, texture_man: xvm.TextureManager) -> list[MaterialStrips]:
     material_strips = []
-    if has_textures:
+    if texture_man.has_textures():
         material_faces = []
-        for i in range(len(obj.material_slots)):
+        for (mat_idx, mat_slot) in enumerate(obj.material_slots):
             material_faces.append([])
+            material_strips.append(MaterialStrips(mat_idx, mat_slot.material, []))
         for face in blender_mesh.loop_triangles:
             material_faces[face.material_index].append(tuple(face.loops))
-        for faces in material_faces:
-            strip = tristrip.stripify(faces, stitchstrips=True)
-            material_strips.append(strip)
+        for mat_idx in range(len(obj.material_slots)):
+            strips = tristrip.stripify(material_faces[mat_idx], stitchstrips=True)
+            material_strips[mat_idx].strips = strips
     else:
         faces = []
         for face in blender_mesh.loop_triangles:
@@ -292,34 +337,30 @@ def create_tristrips_grouped_by_material(obj: bpy.types.Object, blender_mesh: bp
     return material_strips
 
 
-def write_index_buffers(destination: util.AbstractFileArchive, obj: bpy.types.Object, xj_mesh: Mesh, material_strips: list[list[list[int]]], texture_man: xvm.TextureManager, is_transparent: bool):
+def write_index_buffers(destination: util.AbstractFileArchive, obj: bpy.types.Object, blender_mesh: bpy.types.Mesh, xj_mesh: Mesh, texture_man: xvm.TextureManager):
     # Texture IDs must be 0-based for the render settings
     # One buffer per strip
+    material_strips = create_tristrips_grouped_by_material(obj, blender_mesh, texture_man)
     index_buffer_containers = []
     textures = texture_man.get_object_textures(obj)
     texture_id_base = texture_man.get_base_id()
-    for (material_idx, strips) in enumerate(material_strips):
-        for strip in strips:
+    for material_strip_data in material_strips:
+        for strip in material_strip_data.strips:
             # Strips can be empty due to unused material slots, skip them
             if len(strip) < 1:
                 continue
             # Create render state args
-            rs_arg_count = 0
             first_rs_arg_ptr = NULLPTR
-            if len(textures) > 0:
-                blend_modes = (4, 7) # D3DBLEND_SRCALPHA, D3DBLEND_INVSRCALPHA
-                if is_transparent:
-                    blend_modes = (4, 1) # D3DBLEND_SRCALPHA, D3DBLEND_ONE
-                rs_args = make_renderstate_args(
-                    texture_id=textures[material_idx].id - texture_id_base,
-                    blend_modes=blend_modes,
-                    texture_addressing=1,  # D3DTADDRESS_MIRROR
-                    lighting=False) # Map geometry is generally not affected by lighting
-                rs_arg_count = len(rs_args)
-                for rs_arg in rs_args:
-                    ptr = destination.write(rs_arg)
-                    if first_rs_arg_ptr == NULLPTR:
-                        first_rs_arg_ptr = ptr
+            rs_args = material_strip_data.renderstate_args
+            if texture_man.has_textures():
+                rs_args += make_renderstate_args(
+                    # XXX: Assumes material index matches index of texture in this array
+                    texture_id=textures[material_strip_data.material_index].id - texture_id_base)
+            rs_arg_count = len(rs_args)
+            for rs_arg in rs_args:
+                ptr = destination.write(rs_arg)
+                if first_rs_arg_ptr == NULLPTR:
+                    first_rs_arg_ptr = ptr
             # Write Indices
             buf_ptr = destination.write(IndexBuffer(indices=strip), True)
             index_buffer_containers.append(IndexBufferContainer(
@@ -340,8 +381,6 @@ def write_index_buffers(destination: util.AbstractFileArchive, obj: bpy.types.Ob
 
 def make_mesh(destination: util.AbstractFileArchive, obj: bpy.types.Object, blender_mesh: bpy.types.Mesh, texture_man: xvm.TextureManager) -> Mesh:
     mesh = Mesh()
-    tex_images = util.get_object_diffuse_textures(obj)
-    has_textures = len(tex_images) > 0
 
     vertex_colors = blender_mesh.color_attributes[0] if len(blender_mesh.color_attributes) > 0 else None
     has_vertex_color = bool(vertex_colors)
@@ -354,31 +393,53 @@ def make_mesh(destination: util.AbstractFileArchive, obj: bpy.types.Object, blen
         if len(vertex_colors.data) != len(blender_mesh.loop_triangles) * 3:
             raise Exception("XJ error in object '{}': Vertex color data length mismatch. Remember to triangulate your mesh before painting.".format(obj.name))
     # Write various mesh data
-    write_vertex_buffer(destination, obj, blender_mesh, mesh, has_textures, vertex_colors)
-    material_strips = create_tristrips_grouped_by_material(obj, blender_mesh, has_textures)
-    write_index_buffers(destination, obj, mesh, material_strips, texture_man, obj.rel_settings.is_transparent)
+    write_vertex_buffer(destination, obj, blender_mesh, mesh, texture_man.has_textures(), vertex_colors)
+    write_index_buffers(destination, obj, blender_mesh, mesh, texture_man)
     return mesh
 
 
-def make_renderstate_args(*args, texture_id=None, texture_addressing=None, blend_modes=None, lighting=True) -> list[RenderStateArgs]:
+def make_renderstate_args(
+    *args,
+    texture_id=None,
+    texture_addressing=None,
+    blend_modes=None,
+    lighting=None,
+    material=None,
+    camera_space_normals=None,
+    diffuse_color_source=None
+) -> list[RenderStateArgs]:
     rs_args = []
     if texture_id is not None:
         rs_args.append(RenderStateArgs(
             state_type=RenderStateType.TEXTURE_ID,
             arg1=texture_id))
-    if blend_modes is not None:
-        rs_args.append(RenderStateArgs(
-            state_type=RenderStateType.BLEND_MODE,
-            arg1=blend_modes[0],
-            arg2=blend_modes[1]))
     if texture_addressing is not None:
         rs_args.append(RenderStateArgs(
             state_type=RenderStateType.TEXTURE_ADDRESSING,
-            arg1=texture_addressing,
-            arg2=texture_addressing))
-    rs_args.append(RenderStateArgs(
-        state_type=RenderStateType.LIGHTING,
-        arg1=int(lighting)))
+            arg1=int(texture_addressing[0]),
+            arg2=int(texture_addressing[1])))
+    if blend_modes is not None:
+        rs_args.append(RenderStateArgs(
+            state_type=RenderStateType.BLEND_MODE,
+            arg1=int(blend_modes[0]),
+            arg2=int(blend_modes[1])))
+    if lighting is not None:
+        rs_args.append(RenderStateArgs(
+            state_type=RenderStateType.LIGHTING,
+            arg1=int(lighting)))
+    if material is not None:
+        rs_args.append(RenderStateArgs(
+            state_type=RenderStateType.MATERIAL,
+            arg1=int(material[0]),
+            arg2=int(material[1])))
+    if camera_space_normals is not None:
+        rs_args.append(RenderStateArgs(
+            state_type=RenderStateType.CAMERA_SPACE_NORMALS,
+            arg1=int(camera_space_normals)))
+    if diffuse_color_source is not None:
+        rs_args.append(RenderStateArgs(
+            state_type=RenderStateType.MATERIAL_SOURCE,
+            arg1=int(diffuse_color_source)))
     return rs_args
 
 
