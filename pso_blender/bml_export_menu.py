@@ -1,4 +1,3 @@
-import bpy
 import os
 from bpy_extras.io_utils import ExportHelper
 from bpy.types import Operator
@@ -23,8 +22,7 @@ class ExportBml(Operator, ExportHelper):
 
     def execute(self, context):
         noext, ext = os.path.splitext(self.filepath)
-        objs = [obj for obj in bpy.data.objects if obj.type == "MESH"]
-        bml.write(self.filepath, noext + ".xvm", objs)
+        bml.write(self.filepath, noext + ".xvm")
         return {"FINISHED"}
     
     def draw(self, context):

@@ -154,41 +154,69 @@ def read(path: str) -> list[bpy.types.Collection]:
     return collections
 
 
-def write(bml_path: str, xvm_path: str, objects: list[bpy.types.Object]):
+def write(bml_path: str, xvm_path: str):
+    objects_by_collection = []
+    all_objects = []
+    for coll in bpy.data.collections:
+        if not coll.hide_viewport:
+            objs = BmlItem(name=coll.name)
+            for obj in coll.all_objects:
+                if obj.type == "MESH" and not obj.hide_get():
+                    objs.models.append(obj)
+                    all_objects.append(obj)
+            if len(objs.models) > 0:
+                objects_by_collection.append(objs)
+    
+    if len(objects_by_collection) < 1:
+        raise Exception("BML Error: No objects")
+
     bml_buf = ResizableBuffer(0)
     files_buf = ResizableBuffer(0)
-    texture_man = xvm.TextureManager(objects)
+    texture_man = xvm.TextureManager(all_objects)
 
     # Write BML header at the beginning of the file
     bml_header = BmlHeader(
-        file_count=len(objects),
+        file_count=len(all_objects),
         compression_type=CompressionType.NONE,
         has_textures=0
     )
     bml_header.serialize_into(bml_buf)
 
+    chunk_header_size = IffHeader.type_size()
     file_alignment = 0x20 if bml_header.has_textures else 0x800
 
-    for obj in objects:
+    # Collection = file inside BML
+    for collection in objects_by_collection:
         chunks_size_sum = 0
-        # Pointers must be relative to current chunk's body
         njcm_chunk = IffChunk("NJCM")
+        prev_node_next_offset = None
+        # Add all objects in collection to same node tree
+        for (i, obj) in enumerate(collection.models):
+            has_next = i < len(collection.models) - 1
 
-        # Root node must to be the first thing after the chunk header
-        mesh_node = njcm.MeshTreeNode(
-            eval_flags=xj.NinjaEvalFlag.UNIT_ANG | xj.NinjaEvalFlag.UNIT_SCL | xj.NinjaEvalFlag.BREAK,
-            mesh=0xdeadbeef, # Will be rewritten at the end
-            scale_x=1.0,
-            scale_y=1.0,
-            scale_z=1.0)
-        mesh_pointer_offset = njcm_chunk.write(mesh_node) + IffHeader.type_size() + 4
+            mesh_node = njcm.MeshTreeNode(
+                eval_flags=xj.NinjaEvalFlag.UNIT_ANG | xj.NinjaEvalFlag.UNIT_SCL | xj.NinjaEvalFlag.BREAK,
+                mesh=0xdeadbeef, # Will be rewritten at the end
+                scale_x=1.0,
+                scale_y=1.0,
+                scale_z=1.0,
+                next=0xdeadbeef if has_next else NULLPTR)
+            
+            node_ptr = njcm_chunk.write(mesh_node)
+            mesh_pointer_offset = node_ptr + chunk_header_size + 4
+            next_pointer_offset = node_ptr + chunk_header_size + 0x30
 
-        blender_mesh = obj.to_mesh()
-        mesh = xj.make_mesh(njcm_chunk, obj, blender_mesh, texture_man)
+            # Make and write mesh
+            blender_mesh = obj.to_mesh()
+            mesh = xj.make_mesh(njcm_chunk, obj, blender_mesh, texture_man)
+            mesh_ptr = njcm_chunk.write(mesh)
 
-        # Write mesh pointer into root node
-        mesh_ptr = njcm_chunk.write(mesh)
-        pack_into("<L", njcm_chunk.buf.buffer, mesh_pointer_offset, mesh_ptr)
+            # Write mesh pointer into node
+            pack_into("<L", njcm_chunk.buf.buffer, mesh_pointer_offset, mesh_ptr)
+            if prev_node_next_offset is not None:
+                # Link previous node to this one
+                pack_into("<L", njcm_chunk.buf.buffer, prev_node_next_offset, node_ptr)
+            prev_node_next_offset = next_pointer_offset
 
         # Chunk (+POF0) is done
         files_sum_before = files_buf.offset
@@ -203,7 +231,7 @@ def write(bml_path: str, xvm_path: str, objects: list[bpy.types.Object]):
 
         # Write file descriptions after BML header
         file_desc = FileDescription(
-            name=list(bytes(obj.name[0:28] + ".xj", "ascii")),
+            name=list(bytes(collection.name[0:28] + ".xj", "ascii")),
             compressed_size=compressed_size,
             decompressed_size=chunks_size_sum,
             textures_compressed_size=0,
