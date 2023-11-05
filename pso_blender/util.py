@@ -1,5 +1,5 @@
 import math
-from mathutils import Vector
+from mathutils import Vector, Matrix
 import bpy.types 
 from dataclasses import field, dataclass
 from abc import ABC, abstractmethod
@@ -79,3 +79,11 @@ def bytes_to_string(b: list[int]) -> str:
 
 def align_up(n: int, to: int) -> int:
     return (n + to - 1) // to * to
+
+
+def scale_mesh(mesh: bpy.types.Mesh, scale: float):
+    mesh.transform(Matrix.LocRotScale(None, None, Vector((scale, scale, scale))))
+
+
+def get_pso_world_scale() -> float:
+    return 33.0

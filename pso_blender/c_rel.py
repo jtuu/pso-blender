@@ -99,8 +99,9 @@ def write(path: str, objects: list[bpy.types.Object]):
     nodes = []
     for obj in objects:
         blender_mesh = obj.to_mesh()
+
         vertex_array = VertexArray()
-        geom_center = util.from_blender_axes(util.geometry_world_center(obj))
+        geom_center = util.from_blender_axes(util.geometry_world_center(obj) * util.get_pso_world_scale())
 
         collision_flags = obj.rel_settings.collision_flags_value1 | (obj.rel_settings.collision_flags_value2 << 16)
 
@@ -112,7 +113,7 @@ def write(path: str, objects: list[bpy.types.Object]):
         farthest_sq = float("-inf")
         # Get vertices and find farthest vertex
         for local_vert in blender_mesh.vertices:
-            world_vert = util.from_blender_axes(obj.matrix_world @ local_vert.co)
+            world_vert = util.from_blender_axes(obj.matrix_world @ local_vert.co) * util.get_pso_world_scale()
             farthest_sq = max(farthest_sq, util.distance_squared(geom_center.xz, world_vert.xz))
             vertex_array.vertices.append(Vertex(
                 x=world_vert[0], y=world_vert[1], z=world_vert[2]))
@@ -137,10 +138,10 @@ def write(path: str, objects: list[bpy.types.Object]):
                 for j in range(len(face.vertices)):
                     if i == j:
                         continue
-                    a = vertex_array.vertices[i].as_vector().xz
-                    b = vertex_array.vertices[j].as_vector().xz
+                    a = vertex_array.vertices[i].as_vector().xz * util.get_pso_world_scale()
+                    b = vertex_array.vertices[j].as_vector().xz * util.get_pso_world_scale()
                     farthest_sq = max(farthest_sq, util.distance_squared(a, b))
-            center = util.from_blender_axes(obj.matrix_world @ face.center)
+            center = util.from_blender_axes(obj.matrix_world @ face.center) * util.get_pso_world_scale()
             radius = math.sqrt(farthest_sq)
             ptr = rel.write(Face(
                 flags=collision_flags,
@@ -160,6 +161,8 @@ def write(path: str, objects: list[bpy.types.Object]):
 
         node.mesh = rel.write(mesh)
         nodes.append(node)
+
+        obj.to_mesh_clear() # Delete temporary mesh
     nodes.append(CrelNode()) # Terminator
     # Write nodes
     first_node_ptr = None

@@ -99,7 +99,7 @@ def assign_objects_to_chunks(objects: list[bpy.types.Object], chunk_markers: lis
     else:
         # Create a chunk for each marker
         for marker in chunk_markers:
-            marker_center = util.from_blender_axes(marker.location)
+            marker_center = util.from_blender_axes(marker.location) * util.get_pso_world_scale()
             chunk = Chunk(
                 id=chunk_counter,
                 flags=chunk_flags,
@@ -111,7 +111,7 @@ def assign_objects_to_chunks(objects: list[bpy.types.Object], chunk_markers: lis
             chunk_counter += 1
         # Find each object's nearest chunk
         for obj in objects:
-            obj_center = util.from_blender_axes(util.geometry_world_center(obj))
+            obj_center = util.from_blender_axes(util.geometry_world_center(obj)) * util.get_pso_world_scale()
             nearest_chunk = None
             nearest_dist_sq = float("inf")
             for chunk in chunk_to_children:
@@ -123,12 +123,12 @@ def assign_objects_to_chunks(objects: list[bpy.types.Object], chunk_markers: lis
             chunk_to_children[nearest_chunk].append(obj)
             nearest_chunk.static_mesh_tree_count += 1
             # Also calculate chunk radius. Ensure object is definitely within radius by adding its greatest XZ dimension.
-            greatest_obj_dim = max(obj.dimensions.xz)
+            greatest_obj_dim = max(obj.dimensions.xz * util.get_pso_world_scale())
             radius = math.sqrt(nearest_dist_sq) + greatest_obj_dim
             if radius > nearest_chunk.radius:
                 nearest_chunk.radius = radius
                 if radius > max_chunk_radius:
-                    warn("N.REL Warning: Object '{}' might be too far away from a chunk marker (expected maximum distance of {:.1f}, was {:.1}).".format(
+                    warn("N.REL Warning: Object '{}' might be too far away from a chunk marker (expected maximum distance of {:.1f}, was {:.1f}).".format(
                         obj.name, max_chunk_radius, radius))
         # Discard empty chunks
         for chunk in list(chunk_to_children.keys()):
@@ -152,6 +152,7 @@ def write(nrel_path: str, xvm_path: str, objects: list[bpy.types.Object], chunk_
         static_mesh_trees = []
         for obj in chunk_objects:
             blender_mesh = obj.to_mesh()
+            util.scale_mesh(blender_mesh, util.get_pso_world_scale())
             if len(blender_mesh.loop_triangles) < 1:
                 raise NrelError("Object has no faces.", obj=obj)
             # One mesh per tree. Create tree, a node, and the mesh.
@@ -162,7 +163,7 @@ def write(nrel_path: str, xvm_path: str, objects: list[bpy.types.Object], chunk_
                 tree_flags |= MeshTreeFlag.RECEIVES_SHADOWS
             static_mesh_tree = MeshTree(tree_flags=tree_flags)
 
-            mesh_world_pos = util.from_blender_axes(obj.location)
+            mesh_world_pos = util.from_blender_axes(obj.location * util.get_pso_world_scale())
             mesh_node = MeshTreeNode(
                 eval_flags=xj.NinjaEvalFlag.UNIT_ANG | xj.NinjaEvalFlag.UNIT_SCL | xj.NinjaEvalFlag.BREAK,
                 # Make coords relative to chunk
@@ -173,6 +174,7 @@ def write(nrel_path: str, xvm_path: str, objects: list[bpy.types.Object], chunk_
             mesh_node.mesh = rel.write(mesh)
             static_mesh_tree.root_node = rel.write(mesh_node)
             static_mesh_trees.append(static_mesh_tree)
+            obj.to_mesh_clear() # Delete temporary mesh
         # Write mesh trees back to back
         first_static_mesh_tree_ptr = NULLPTR
         for tree in static_mesh_trees:

@@ -59,7 +59,8 @@ def write(path: str, room_objects: list[bpy.types.Object]):
     rooms = []
     for (i, obj) in enumerate(room_objects):
         blender_mesh = obj.to_mesh()
-        geom_center = util.from_blender_axes(util.geometry_world_center(obj))
+
+        geom_center = util.from_blender_axes(util.geometry_world_center(obj)) * util.get_pso_world_scale()
         room = Room(
             id=i,
             flags=1,
@@ -72,7 +73,7 @@ def write(path: str, room_objects: list[bpy.types.Object]):
         farthest_sq = float("-inf")
         for local_vert in blender_mesh.vertices:
             # Apply transforms from object but translate position back to local
-            world_vert = util.from_blender_axes(obj.matrix_world @ local_vert.co) - geom_center
+            world_vert = util.from_blender_axes(obj.matrix_world @ local_vert.co) * util.get_pso_world_scale() - geom_center
             farthest_sq = max(farthest_sq, util.distance_squared(geom_center, world_vert))
             vertices.append(Vertex(
                 x=world_vert[0], y=world_vert[1], z=world_vert[2],
@@ -130,6 +131,8 @@ def write(path: str, room_objects: list[bpy.types.Object]):
 
         room.mesh_container = container_ptr
         rooms.append(room)
+
+        obj.to_mesh_clear() # Delete temporary mesh
     # Write rooms
     first_room_ptr = None
     for room in rooms:
