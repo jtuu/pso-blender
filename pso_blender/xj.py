@@ -286,8 +286,8 @@ def write_vertex_buffer(destination: util.AbstractFileArchive, obj: bpy.types.Ob
                 vertex.u = u
                 vertex.v = v
             # Get colors
-            # Assume faces were triangulated when painting and vertex color array aligns with loops
             if vertex_colors:
+                # Assuming vertex colors are "face corner" type, i.e. per-loop
                 col = vertex_colors.data[loop_idx].color
                 # BGRA
                 # Need to clamp because light baking can cause values to go higher than normal
@@ -390,8 +390,6 @@ def make_mesh(destination: util.AbstractFileArchive, obj: bpy.types.Object, blen
             raise Exception("XJ error in object '{}': Invalid vertex color format '{}'.".format(obj.name, vertex_colors.data_type))
         if vertex_colors.domain != "CORNER":
             raise Exception("XJ error in object '{}': Invalid vertex color type '{}'. Please select 'Face Corner' when creating color attribute.".format(obj.name, vertex_colors.domain))
-        if len(vertex_colors.data) != len(blender_mesh.loop_triangles) * 3:
-            raise Exception("XJ error in object '{}': Vertex color data length mismatch. Remember to triangulate your mesh before painting.".format(obj.name))
     # Write various mesh data
     write_vertex_buffer(destination, obj, blender_mesh, mesh, texture_man.has_textures(), vertex_colors)
     write_index_buffers(destination, obj, blender_mesh, mesh, texture_man)
