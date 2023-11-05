@@ -3,10 +3,9 @@ from struct import pack_into
 import bpy
 from warnings import warn
 from .serialization import Serializable, Numeric, FixedArray, ResizableBuffer
-from . import prs, njcm, xvm, xj
+from . import prs, njcm, xvm, xj, util
 from .nj import nj_to_blender_mesh
 from .iff import IffChunk, IffHeader, parse_pof0
-from .util import align_up, bytes_to_string
 
 
 U8 = Numeric.U8
@@ -78,13 +77,13 @@ def parse_bml(path: str) -> list[BmlItem]:
     (bml_header, _) = BmlHeader.deserialize_from(bml)
     file_description_offset = BmlHeader.type_size()
     file_alignment = 0x20 if bml_header.has_textures else 0x800
-    file_offset = align_up(bml_header.file_count * 0x40, 0x800)
+    file_offset = util.align_up(bml_header.file_count * 0x40, 0x800)
     chunk_header_size = IffHeader.type_size()
 
     for i in range(bml_header.file_count):
         # Read file description
         (file_description, file_description_offset) = FileDescription.deserialize_from(bml, offset=file_description_offset)
-        item = BmlItem(name=bytes_to_string(file_description.name))
+        item = BmlItem(name=util.bytes_to_string(file_description.name))
         items.append(item)
 
         # Get file from offset, decompress if needed
@@ -98,7 +97,7 @@ def parse_bml(path: str) -> list[BmlItem]:
         prev_chunk_size = None
         while chunk_offset < file_description.decompressed_size:
             (chunk_header, _) = IffHeader.deserialize_from(file_data, offset=chunk_offset)
-            chunk_type = bytes_to_string(chunk_header.type_name)
+            chunk_type = util.bytes_to_string(chunk_header.type_name)
             chunk_body = file_data[chunk_offset + chunk_header_size:chunk_offset + chunk_header_size + chunk_header.body_size]
 
             if chunk_type == "NJCM":
@@ -120,12 +119,12 @@ def parse_bml(path: str) -> list[BmlItem]:
             prev_chunk_size = chunk_header.body_size
             chunk_offset += chunk_header.body_size + chunk_header_size
 
-        file_offset += align_up(file_description.compressed_size, file_alignment)
+        file_offset += util.align_up(file_description.compressed_size, file_alignment)
 
         if file_description.textures_compressed_size > 0:
             # Texture archive is always PRS compressed
             item.texture_archive = prs.decompress(bml[file_offset:file_offset + file_description.textures_compressed_size])
-            file_offset += align_up(file_description.textures_compressed_size, file_alignment)
+            file_offset += util.align_up(file_description.textures_compressed_size, file_alignment)
 
     return items
 
@@ -208,6 +207,7 @@ def write(bml_path: str, xvm_path: str):
 
             # Make and write mesh
             blender_mesh = obj.to_mesh()
+            util.scale_mesh(blender_mesh, util.get_pso_world_scale())
             mesh = xj.make_mesh(njcm_chunk, obj, blender_mesh, texture_man)
             mesh_ptr = njcm_chunk.write(mesh)
 
@@ -217,6 +217,7 @@ def write(bml_path: str, xvm_path: str):
                 # Link previous node to this one
                 pack_into("<L", njcm_chunk.buf.buffer, prev_node_next_offset, node_ptr)
             prev_node_next_offset = next_pointer_offset
+            obj.to_mesh_clear()
 
         # Chunk (+POF0) is done
         files_sum_before = files_buf.offset
@@ -226,7 +227,7 @@ def write(bml_path: str, xvm_path: str):
         compressed_size = chunks_size_sum
 
         # Add padding between files
-        files_buf.grow_to(files_sum_before + align_up(compressed_size, file_alignment))
+        files_buf.grow_to(files_sum_before + util.align_up(compressed_size, file_alignment))
         files_buf.seek_to_end()
 
         # Write file descriptions after BML header
@@ -239,7 +240,7 @@ def write(bml_path: str, xvm_path: str):
         file_desc.serialize_into(bml_buf)
     
     # Add padding after file descriptions
-    bml_buf.grow_to(align_up(bml_header.file_count * 0x40, 0x800))
+    bml_buf.grow_to(util.align_up(bml_header.file_count * 0x40, 0x800))
     files_buf.seek_to_end()
     # Write files after descriptions
     bml_buf.append(files_buf.buffer)

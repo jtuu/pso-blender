@@ -506,6 +506,7 @@ def write(xj_path: str, xvm_path: str, obj: bpy.types.Object):
     mesh_pointer_offset = njcm_chunk.write(mesh_node) + IffHeader.type_size() + 4
 
     blender_mesh = obj.to_mesh()
+    util.scale_mesh(blender_mesh, util.get_pso_world_scale())
     mesh = make_mesh(njcm_chunk, obj, blender_mesh, texture_man)
 
     # Write mesh pointer into root node
@@ -535,6 +536,8 @@ def write(xj_path: str, xvm_path: str, obj: bpy.types.Object):
 
         # Append NJTL
         xj_buf += njtl_chunk.finish()
+    
+    obj.to_mesh_clear()
 
     with open(xj_path, "wb") as f:
         f.write(xj_buf)
