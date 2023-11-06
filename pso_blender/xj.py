@@ -337,11 +337,12 @@ def create_tristrips_grouped_by_material(obj: bpy.types.Object, blender_mesh: bp
     return material_strips
 
 
-def write_index_buffers(destination: util.AbstractFileArchive, obj: bpy.types.Object, blender_mesh: bpy.types.Mesh, xj_mesh: Mesh, texture_man: xvm.TextureManager):
+def write_index_buffers(destination: util.AbstractFileArchive, obj: bpy.types.Object, blender_mesh: bpy.types.Mesh, xj_mesh: Mesh, texture_man: xvm.TextureManager, has_vertex_alpha: bool):
     # Texture IDs must be 0-based for the render settings
     # One buffer per strip
     material_strips = create_tristrips_grouped_by_material(obj, blender_mesh, texture_man)
-    index_buffer_containers = []
+    opaque_index_buffer_containers = []
+    alpha_index_buffer_containers = []
     textures = texture_man.get_object_textures(obj)
     texture_id_base = texture_man.get_base_id()
     for material_strip_data in material_strips:
@@ -349,13 +350,16 @@ def write_index_buffers(destination: util.AbstractFileArchive, obj: bpy.types.Ob
             # Strips can be empty due to unused material slots, skip them
             if len(strip) < 1:
                 continue
+            has_alpha = has_vertex_alpha
             # Create render state args
             first_rs_arg_ptr = NULLPTR
             rs_args = material_strip_data.renderstate_args
             if texture_man.has_textures():
+                tex = textures[material_strip_data.material_index]
+                has_alpha = has_alpha or tex.has_alpha
                 rs_args += make_renderstate_args(
                     # XXX: Assumes material index matches index of texture in this array
-                    texture_id=textures[material_strip_data.material_index].id - texture_id_base)
+                    texture_id=tex.id - texture_id_base)
             rs_arg_count = len(rs_args)
             for rs_arg in rs_args:
                 ptr = destination.write(rs_arg)
@@ -363,20 +367,27 @@ def write_index_buffers(destination: util.AbstractFileArchive, obj: bpy.types.Ob
                     first_rs_arg_ptr = ptr
             # Write Indices
             buf_ptr = destination.write(IndexBuffer(indices=strip), True)
-            index_buffer_containers.append(IndexBufferContainer(
+            containers = alpha_index_buffer_containers if has_alpha else opaque_index_buffer_containers
+            containers.append(IndexBufferContainer(
                 index_buffer=buf_ptr,
                 index_count=len(strip),
                 renderstate_args=first_rs_arg_ptr,
                 renderstate_args_count=rs_arg_count))
     # Index buffer containers need to be written back to back
-    first_index_buffer_container_ptr = None
-    for buf in index_buffer_containers:
+    first_alpha_index_buffer_container_ptr = NULLPTR
+    for buf in alpha_index_buffer_containers:
         ptr = destination.write(buf)
-        if first_index_buffer_container_ptr is None:
-            first_index_buffer_container_ptr = ptr
-    # XXX: Let's just put everything here regardless of if it has alpha or not
-    xj_mesh.alpha_index_buffer_count = len(index_buffer_containers)
-    xj_mesh.alpha_index_buffers = first_index_buffer_container_ptr
+        if first_alpha_index_buffer_container_ptr == NULLPTR:
+            first_alpha_index_buffer_container_ptr = ptr
+    first_opaque_index_buffer_container_ptr = NULLPTR
+    for buf in opaque_index_buffer_containers:
+        ptr = destination.write(buf)
+        if first_opaque_index_buffer_container_ptr == NULLPTR:
+            first_opaque_index_buffer_container_ptr = ptr
+    xj_mesh.alpha_index_buffer_count = len(alpha_index_buffer_containers)
+    xj_mesh.alpha_index_buffers = first_alpha_index_buffer_container_ptr
+    xj_mesh.index_buffer_count = len(opaque_index_buffer_containers)
+    xj_mesh.index_buffers = first_opaque_index_buffer_container_ptr
 
 
 def make_mesh(destination: util.AbstractFileArchive, obj: bpy.types.Object, blender_mesh: bpy.types.Mesh, texture_man: xvm.TextureManager) -> Mesh:
@@ -384,15 +395,20 @@ def make_mesh(destination: util.AbstractFileArchive, obj: bpy.types.Object, blen
 
     vertex_colors = blender_mesh.color_attributes[0] if len(blender_mesh.color_attributes) > 0 else None
     has_vertex_color = bool(vertex_colors)
+    has_vertex_alpha = False
     if has_vertex_color:
         # Despite the names of the types, they appear to be identical
         if vertex_colors.data_type != "FLOAT_COLOR" and vertex_colors.data_type != "BYTE_COLOR":
             raise Exception("XJ error in object '{}': Invalid vertex color format '{}'.".format(obj.name, vertex_colors.data_type))
         if vertex_colors.domain != "CORNER":
             raise Exception("XJ error in object '{}': Invalid vertex color type '{}'. Please select 'Face Corner' when creating color attribute.".format(obj.name, vertex_colors.domain))
+        for attr in vertex_colors.data:
+            if attr.color[3] < 1:
+                has_vertex_alpha = True
+                break
     # Write various mesh data
     write_vertex_buffer(destination, obj, blender_mesh, mesh, texture_man.has_textures(), vertex_colors)
-    write_index_buffers(destination, obj, blender_mesh, mesh, texture_man)
+    write_index_buffers(destination, obj, blender_mesh, mesh, texture_man, has_vertex_alpha)
     return mesh
 
 

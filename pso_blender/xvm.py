@@ -199,22 +199,21 @@ def cache_xvr(path: str, xvr: Xvr):
 
 def make_xvr(tex: Texture) -> Xvr:
     img_width, img_height = tex.image.size
-    has_alpha = tex.image.channels == 4
     flags = 0
     if tex.generate_mipmaps:
         flags |= XvrFlags.MIPMAPS
-    if has_alpha:
+    if tex.has_alpha:
         if tex.image.alpha_mode != "STRAIGHT":
             raise Exception("XVR Error in Image '{}': Image has unsupported alpha mode '{}'".format(tex.image.filepath, tex.image.alpha_mode))
         flags |= XvrFlags.ALPHA
     xvr_format = XvrFormat.DXT1
-    data = dxt.compress_image(list(tex.image.pixels), img_width, img_height, tex.image.channels, has_alpha)
+    data = dxt.compress_image(list(tex.image.pixels), img_width, img_height, tex.image.channels, tex.has_alpha)
     if tex.generate_mipmaps:
         # Concat mipmaps into data
-        mipmaps = generate_mipmaps(tex.image, has_alpha)
+        mipmaps = generate_mipmaps(tex.image, tex.has_alpha)
         for level in mipmaps:
             level_width, level_height = level.size
-            data += dxt.compress_image(list(level.pixels), level_width, level_height, level.channels, has_alpha)
+            data += dxt.compress_image(list(level.pixels), level_width, level_height, level.channels, tex.has_alpha)
             # Remove temporary copies because Blender automatically saves them in the scene
             bpy.data.images.remove(level)
     return Xvr(

@@ -1,7 +1,7 @@
 import math
 from mathutils import Vector, Matrix
 import bpy.types 
-from dataclasses import field, dataclass
+from dataclasses import field
 from abc import ABC, abstractmethod
 from .serialization import Serializable
 
@@ -14,11 +14,25 @@ def mesh_faces(mesh: bpy.types.Mesh) -> list[tuple[int, int, int]]:
     return faces
 
 
-@dataclass
 class Texture:
     id: int
     generate_mipmaps: bool
+    has_alpha: bool
     image: bpy.types.Image
+
+    def __init__(self, *args, id: int=None, image: bpy.types.Image, generate_mipmaps: bool=False):
+        self.id = id
+        self.image = image
+        self.generate_mipmaps = generate_mipmaps
+        # Check if texture uses alpha
+        self.has_alpha = image.channels == 4
+        if self.has_alpha:
+            pixels = list(image.pixels)
+            self.has_alpha = False
+            for i in range(0, len(pixels), 4):
+                if pixels[i + 3] < 1:
+                    self.has_alpha = True
+                    break
 
 
 def get_object_diffuse_textures(obj: bpy.types.Object) -> list[Texture]:
@@ -29,7 +43,7 @@ def get_object_diffuse_textures(obj: bpy.types.Object) -> list[Texture]:
             continue
         for node in mat_slot.material.node_tree.nodes:
             if node.type == "TEX_IMAGE" and node.image:
-                textures.append(Texture(id=None, generate_mipmaps=mat_slot.material.xj_settings.generate_mipmaps, image=node.image))
+                textures.append(Texture(generate_mipmaps=mat_slot.material.xj_settings.generate_mipmaps, image=node.image))
                 break
     return textures
 
