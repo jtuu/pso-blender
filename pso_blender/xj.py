@@ -123,15 +123,16 @@ class VertexBufferContainer(Serializable):
     @classmethod
     def deserialize_from(cls, buf, offset):
         (container, after) = super(VertexBufferContainer, cls).deserialize_from(buf, offset)
-        if container.vertex_format == 1:
+        vertex_format = container.vertex_format & 0xffff
+        if vertex_format == 1:
             vert_ctor = VertexFormat1
-        elif container.vertex_format == 3:
+        elif vertex_format == 3:
             vert_ctor = VertexFormat3
-        elif container.vertex_format == 4:
+        elif vertex_format == 4:
             vert_ctor = VertexFormat4
-        elif container.vertex_format == 5:
+        elif vertex_format == 5:
             vert_ctor = VertexFormat5
-        elif container.vertex_format == 7:
+        elif vertex_format == 7:
             vert_ctor = VertexFormat7
         else:
             raise Exception("Unimplemented vertex format {}".format(container.vertex_format))
@@ -266,6 +267,10 @@ def determine_vertex_format(has_textures: bool, has_vertex_colors: bool):
 def write_vertex_buffer(destination: util.AbstractFileArchive, obj: bpy.types.Object, blender_mesh: bpy.types.Mesh, xj_mesh: Mesh, has_textures: bool, vertex_colors):
     # One vertex per loop
     (vertex_format, vertex_size, vertex_buffer, vertex_ctor) = determine_vertex_format(has_textures, bool(vertex_colors))
+
+    if obj.rel_settings.is_translucent:
+        vertex_format |= 0x10000
+
     vertex_buffer.vertices = [None] * len(blender_mesh.loops)
     for face in blender_mesh.loop_triangles:
         for (vert_idx, loop_idx) in zip(face.vertices, face.loops):
@@ -350,7 +355,7 @@ def write_index_buffers(destination: util.AbstractFileArchive, obj: bpy.types.Ob
             # Strips can be empty due to unused material slots, skip them
             if len(strip) < 1:
                 continue
-            has_alpha = has_vertex_alpha
+            has_alpha = obj.rel_settings.is_translucent or has_vertex_alpha
             # Create render state args
             first_rs_arg_ptr = NULLPTR
             rs_args = material_strip_data.renderstate_args

@@ -14,6 +14,7 @@ class MeshRelSettings(bpy.types.PropertyGroup):
     # Can't figure out how to get IntProperty to support a 32bit unsigned value so I'll just split it into two 16bit values
     collision_flags_value1: IntProperty(default=0, subtype="UNSIGNED")
     collision_flags_value2: IntProperty(default=0, subtype="UNSIGNED")
+    is_translucent: BoolProperty(name="Translucent", default=False)
 
 
 def make_collision_flag_props():
@@ -69,6 +70,7 @@ class MeshNrelSettingsPanel(Panel):
         col = self.layout.column(align=True)
         col.prop(settings, "receives_shadows")
         col.prop(settings, "receives_fog")
+        col.prop(settings, "is_translucent")
 
 
 class MeshCrelSettingsPanel(Panel):
