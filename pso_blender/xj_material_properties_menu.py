@@ -33,6 +33,11 @@ class XjMaterialSettings(bpy.types.PropertyGroup):
     material2: IntProperty(name="Unknown 2", default=0)
     lighting: BoolProperty(name="Affected by lighting", default=False)
     camera_space_normals: BoolProperty(name="Camera space normals", default=False)
+    normal_type: EnumProperty(
+        name="Normal type",
+        default={str(xj.NormalType.Vertex)},
+        items=make_enum_prop_items(xj.NormalType),
+        options={"ENUM_FLAG"})
     diffuse_color_source: EnumProperty(
         name="Diffuse color source",
         default=str(xj.MaterialColorSource.D3DMCS_COLOR1),
@@ -70,6 +75,7 @@ class XjMaterialSettingsPanel(bpy.types.Panel):
         tex_addr_input_col.prop(settings, "tex_addr_v")
         # Other
         self.layout.prop(settings, "camera_space_normals")
+        self.layout.prop(settings, "normal_type")
         self.layout.prop(settings, "diffuse_color_source")
         self.layout.prop(settings, "material1")
         self.layout.prop(settings, "material2")

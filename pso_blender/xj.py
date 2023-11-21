@@ -240,21 +240,41 @@ class NinjaEvalFlag:
     MODIFIER = 0b1000000000
 
 
-def determine_vertex_format(has_textures: bool, has_vertex_colors: bool):
+@dataclass
+class NormalType:
+    Vertex = 1
+    Face = 2
+
+
+def determine_vertex_format(has_textures: bool, has_vertex_colors: bool, use_normals: bool):
     # Figure out the right vertex format based on what data mesh has.
     if has_textures:
         if has_vertex_colors:
-            # Coords + color + UVs
-            vertex_format = 5
-            vertex_size = VertexFormat5.type_size()
-            vertex_buffer = VertexBufferFormat5()
-            vertex_ctor = VertexFormat5
+            if use_normals:
+                # Coords + Normals + color + UVs
+                vertex_format = 7
+                vertex_size = VertexFormat7.type_size()
+                vertex_buffer = VertexBufferFormat7()
+                vertex_ctor = VertexFormat7
+            else:
+                # Coords + color + UVs
+                vertex_format = 5
+                vertex_size = VertexFormat5.type_size()
+                vertex_buffer = VertexBufferFormat5()
+                vertex_ctor = VertexFormat5
         else:
-            # Coords + UVs
-            vertex_format = 1
-            vertex_size = VertexFormat1.type_size()
-            vertex_buffer = VertexBufferFormat1()
-            vertex_ctor = VertexFormat1
+            if use_normals:
+                # Coords + normals + UVs
+                vertex_format = 3
+                vertex_size = VertexFormat3.type_size()
+                vertex_buffer = VertexBufferFormat3()
+                vertex_ctor = VertexFormat3
+            else:
+                # Coords + UVs
+                vertex_format = 1
+                vertex_size = VertexFormat1.type_size()
+                vertex_buffer = VertexBufferFormat1()
+                vertex_ctor = VertexFormat1
     else:
         # Coords + color
         vertex_format = 4
@@ -264,9 +284,11 @@ def determine_vertex_format(has_textures: bool, has_vertex_colors: bool):
     return (vertex_format, vertex_size, vertex_buffer, vertex_ctor)
 
 
-def write_vertex_buffer(destination: util.AbstractFileArchive, obj: bpy.types.Object, blender_mesh: bpy.types.Mesh, xj_mesh: Mesh, has_textures: bool, vertex_colors):
+def write_vertex_buffer(destination: util.AbstractFileArchive, obj: bpy.types.Object, blender_mesh: bpy.types.Mesh, xj_mesh: Mesh, has_textures: bool, vertex_colors, normal_type):
+    use_normals = normal_type is not None
+
     # One vertex per loop
-    (vertex_format, vertex_size, vertex_buffer, vertex_ctor) = determine_vertex_format(has_textures, bool(vertex_colors))
+    (vertex_format, vertex_size, vertex_buffer, vertex_ctor) = determine_vertex_format(has_textures, bool(vertex_colors), use_normals)
 
     if obj.rel_settings.is_translucent:
         vertex_format |= 0x10000
@@ -300,6 +322,16 @@ def write_vertex_buffer(destination: util.AbstractFileArchive, obj: bpy.types.Ob
                 vertex.g = int(util.clamp(col[1], 0.0, 1.0) * 0xff)
                 vertex.r = int(util.clamp(col[2], 0.0, 1.0) * 0xff)
                 vertex.a = int(util.clamp(col[3], 0.0, 1.0) * 0xff)
+            if use_normals:
+                # Vertex or face normal
+                normal = local_vert.normal if normal_type == NormalType.Vertex else face.normal
+                normal = normal.to_4d()
+                normal.w = 0
+                normal = util.from_blender_axes((obj.matrix_world @ normal).to_3d().normalized())
+                vertex.nx = normal[0]
+                vertex.ny = normal[1]
+                vertex.nz = normal[2]
+
     # Put all vertices in one buffer
     xj_mesh.vertex_buffer_count = 1
     xj_mesh.vertex_buffers = destination.write(VertexBufferContainer(
@@ -398,6 +430,13 @@ def write_index_buffers(destination: util.AbstractFileArchive, obj: bpy.types.Ob
 def make_mesh(destination: util.AbstractFileArchive, obj: bpy.types.Object, blender_mesh: bpy.types.Mesh, texture_man: xvm.TextureManager) -> Mesh:
     mesh = Mesh()
 
+    normal_type = None
+    for mat_slot in obj.material_slots:
+        if mat_slot.material.xj_settings.camera_space_normals:
+            # XXX: Camera projection setting is applied to entire mesh instead of material vertex group
+            normal_type = int(list(mat_slot.material.xj_settings.normal_type)[0])
+            break
+
     vertex_colors = blender_mesh.color_attributes[0] if len(blender_mesh.color_attributes) > 0 else None
     has_vertex_color = bool(vertex_colors)
     has_vertex_alpha = False
@@ -412,7 +451,7 @@ def make_mesh(destination: util.AbstractFileArchive, obj: bpy.types.Object, blen
                 has_vertex_alpha = True
                 break
     # Write various mesh data
-    write_vertex_buffer(destination, obj, blender_mesh, mesh, texture_man.has_textures(), vertex_colors)
+    write_vertex_buffer(destination, obj, blender_mesh, mesh, texture_man.has_textures(), vertex_colors, normal_type)
     write_index_buffers(destination, obj, blender_mesh, mesh, texture_man, has_vertex_alpha)
     return mesh
 
