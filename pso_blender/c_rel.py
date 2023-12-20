@@ -218,16 +218,6 @@ def to_blender_mesh(rel: Rel, node: CrelNode, node_idx: int) -> bpy.types.Object
     obj = bpy.data.objects.new("object_" + str(node_idx), blender_mesh)
     obj.rel_settings.collision_flags_value1 = node.flags & 0xffff
     obj.rel_settings.collision_flags_value2 = (node.flags >> 16) & 0xffff
-
-    flag_face_maps = dict()
-    for (face_idx, face) in enumerate(faces):
-        name = "collision_type_" + hex(face.flags)
-        if name in flag_face_maps:
-            grp = flag_face_maps[name]
-        else:
-            grp = obj.face_maps.new(name=name)
-            flag_face_maps[name] = grp
-        grp.add([face_idx])
     
     obj.location.x = node.x
     obj.location.y = node.z
