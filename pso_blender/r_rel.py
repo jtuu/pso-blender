@@ -113,7 +113,7 @@ def write(path: str, room_objects: list[bpy.types.Object]):
         padding = None
         if (rel.buf.offset + IndexListNode.type_size() + indices_size) % 4 != 0:
             index_node.offset_to_next += 1
-            padding = "<H"
+            padding = Numeric.endianness_prefix + "H"
 
         index_node_ptr = rel.write(index_node)
 

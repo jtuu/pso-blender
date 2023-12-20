@@ -56,7 +56,7 @@ class IffChunk(util.AbstractFileArchive):
         size_offset = 4
         header_size = IffHeader.type_size()
         # Write size of body into header
-        pack_into("<L", self.buf.buffer, size_offset, self.buf.offset - header_size)
+        pack_into(Numeric.endianness_prefix + "L", self.buf.buffer, size_offset, self.buf.offset - header_size)
         # Write pointer table header
         pof0_offset = self.buf.offset
         pof0_header = IffHeader(
@@ -82,7 +82,7 @@ class IffChunk(util.AbstractFileArchive):
             else:
                 raise Exception("BML error: Gap between pointers is too big ({})".format(abs_offset - prev_pointer_offset))
         # Write POF0 body size
-        pack_into("<L", self.buf.buffer, pof0_offset + size_offset, self.buf.offset - pof0_offset - header_size)
+        pack_into(Numeric.endianness_prefix + "L", self.buf.buffer, pof0_offset + size_offset, self.buf.offset - pof0_offset - header_size)
         return self.buf.buffer
 
 
@@ -118,6 +118,6 @@ def parse_pof0(filename: str, file_data: bytearray, prev_chunk_offset: int, prev
             read_cursor += 4
         # Offsets are relative to the previous offset and divided by four (similar to REL)
         pointer_offset += relative_offset * 4
-        (pointer, ) = unpack_from("<L", file_data, offset=pointer_offset)
+        (pointer, ) = unpack_from(Numeric.endianness_prefix + "L", file_data, offset=pointer_offset)
         pointer_table.append((pointer_offset, pointer))
     return pointer_table

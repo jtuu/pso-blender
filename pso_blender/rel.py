@@ -1,6 +1,6 @@
 from struct import pack_into, unpack_from
 from warnings import warn
-from .serialization import Serializable, ResizableBuffer
+from .serialization import Serializable, ResizableBuffer, Numeric
 from .util import AbstractFileArchive
 
 
@@ -15,7 +15,7 @@ class Rel(AbstractFileArchive):
             self.buf = ResizableBuffer(0)
             # Consume the 0th offset to ensure that no userdata can have pointers that point to 0
             # because we use 0 as nullptr even though technically it would be a valid offset
-            self.buf.pack("<L", 0)
+            self.buf.pack(Numeric.endianness_prefix + "L", 0)
             self.payload_offset = None
         else:
             self.buf = buf
@@ -50,20 +50,20 @@ class Rel(AbstractFileArchive):
         for abs_offset in self.pointer_offsets:
             rel_offset = (abs_offset - prev_pointer_offset) // 4
             prev_pointer_offset = abs_offset
-            self.buf.pack("<H", rel_offset)
+            self.buf.pack(Numeric.endianness_prefix + "H", rel_offset)
         # Create trailer
         self.buf.grow_by(0x20)
-        pack_into("<L", self.buf.buffer, Rel.POINTER_TABLE_POINTER_OFFSET, pointer_table_offset)
-        pack_into("<L", self.buf.buffer, Rel.POINTER_COUNT_OFFSET, pointer_count)
-        pack_into("<L", self.buf.buffer, Rel.PAYLOAD_POINTER_OFFSET, payload_offset)
+        pack_into(Numeric.endianness_prefix + "L", self.buf.buffer, Rel.POINTER_TABLE_POINTER_OFFSET, pointer_table_offset)
+        pack_into(Numeric.endianness_prefix + "L", self.buf.buffer, Rel.POINTER_COUNT_OFFSET, pointer_count)
+        pack_into(Numeric.endianness_prefix + "L", self.buf.buffer, Rel.PAYLOAD_POINTER_OFFSET, payload_offset)
         self.payload_offset = payload_offset
         return self.buf.buffer
 
     @staticmethod
     def read_from(data: bytearray) -> "Rel":
-        (pointer_count, ) = unpack_from("<L", data, Rel.POINTER_COUNT_OFFSET)
-        (pointer_table_offset, ) = unpack_from("<L", data, Rel.POINTER_TABLE_POINTER_OFFSET)
-        (payload_offset, ) = unpack_from("<L", data, Rel.PAYLOAD_POINTER_OFFSET)
+        (pointer_count, ) = unpack_from(Numeric.endianness_prefix + "L", data, Rel.POINTER_COUNT_OFFSET)
+        (pointer_table_offset, ) = unpack_from(Numeric.endianness_prefix + "L", data, Rel.POINTER_TABLE_POINTER_OFFSET)
+        (payload_offset, ) = unpack_from(Numeric.endianness_prefix + "L", data, Rel.PAYLOAD_POINTER_OFFSET)
         rel = Rel(buf=ResizableBuffer(buf=data))
         rel.payload_offset = payload_offset
 
@@ -71,7 +71,7 @@ class Rel(AbstractFileArchive):
         prev_pointer_offset = 0
         for i in range(pointer_count):
             table_entry_offset = pointer_table_offset + i * pointer_size
-            (rel_offset, ) = unpack_from("<H", data, table_entry_offset)
+            (rel_offset, ) = unpack_from(Numeric.endianness_prefix + "H", data, table_entry_offset)
             abs_offset = prev_pointer_offset + rel_offset * 4
             prev_pointer_offset = abs_offset
             rel.pointer_offsets.append(abs_offset)

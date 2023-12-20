@@ -571,7 +571,7 @@ def write(xj_path: str, xvm_path: str, obj: bpy.types.Object):
 
     # Write mesh pointer into root node
     mesh_ptr = njcm_chunk.write(mesh)
-    pack_into("<L", njcm_chunk.buf.buffer, mesh_pointer_offset, mesh_ptr)
+    pack_into(Numeric.endianness_prefix + "L", njcm_chunk.buf.buffer, mesh_pointer_offset, mesh_ptr)
 
     # Chunk (+POF0) is done
     xj_buf = njcm_chunk.finish()
@@ -592,7 +592,7 @@ def write(xj_path: str, xvm_path: str, obj: bpy.types.Object):
             if first_texlist_entry_ptr == NULLPTR:
                 first_texlist_entry_ptr = ptr
         # Rewrite pointer
-        pack_into("<L", njtl_chunk.buf.buffer, texlist_elements_offset, first_texlist_entry_ptr)
+        pack_into(Numeric.endianness_prefix + "L", njtl_chunk.buf.buffer, texlist_elements_offset, first_texlist_entry_ptr)
 
         # Append NJTL
         xj_buf += njtl_chunk.finish()

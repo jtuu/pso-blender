@@ -212,10 +212,10 @@ def write(bml_path: str, xvm_path: str):
             mesh_ptr = njcm_chunk.write(mesh)
 
             # Write mesh pointer into node
-            pack_into("<L", njcm_chunk.buf.buffer, mesh_pointer_offset, mesh_ptr)
+            pack_into(Numeric.endianness_prefix + "L", njcm_chunk.buf.buffer, mesh_pointer_offset, mesh_ptr)
             if prev_node_next_offset is not None:
                 # Link previous node to this one
-                pack_into("<L", njcm_chunk.buf.buffer, prev_node_next_offset, node_ptr)
+                pack_into(Numeric.endianness_prefix + "L", njcm_chunk.buf.buffer, prev_node_next_offset, node_ptr)
             prev_node_next_offset = next_pointer_offset
             obj.to_mesh_clear()
 
