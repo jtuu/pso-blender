@@ -21,14 +21,14 @@ class Numeric:
 
     type_info = {
         # newtype name: python type, structlib format
-        "U8": (int, "<B"),
-        "U16": (int, "<H"),
-        "U32": (int, "<L"),
-        "I8": (int, "<b"),
-        "I16": (int, "<h"),
-        "I32": (int, "<l"),
-        "F32": (float, "<f"),
-        "Ptr32": (int, "<L")
+        "U8": (int, "B"),
+        "U16": (int, "H"),
+        "U32": (int, "L"),
+        "I8": (int, "b"),
+        "I16": (int, "h"),
+        "I32": (int, "l"),
+        "F32": (float, "f"),
+        "Ptr32": (int, "L")
     }
 
     type_sizes = {
@@ -41,13 +41,23 @@ class Numeric:
         "f": 4,
     }
 
+    endianness_prefix = "<"
+
+    @staticmethod
+    def use_little_endian():
+        Numeric.endianness_prefix = "<"
+    
+    @staticmethod
+    def use_big_endian():
+        Numeric.endianness_prefix = ">"
+
     @staticmethod
     def format_of_type(tp) -> str:
         """Returns the structlib format of the given type"""
         entry = Numeric.type_info.get(tp.__name__)
         if not entry:
             return None
-        return entry[1]
+        return Numeric.endianness_prefix + entry[1]
     
     @staticmethod
     def size_of_format(fmt: str) -> int:

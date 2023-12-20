@@ -78,7 +78,7 @@ class ExportRel(Operator, ExportHelper):
         if minimap_objs and len(minimap_objs) > 0:
             r_rel.write(noext + "r" + ext, minimap_objs)
         if render_objs and len(render_objs) > 0:
-            n_rel.write(noext + "n" + ext, noext + ".xvm", render_objs, chunk_markers)
+            n_rel.write(noext + "n" + ext, noext + ".xvm", noext + ".tam", render_objs, chunk_markers)
         if collision_objs and len(collision_objs):
             c_rel.write(noext + "c" + ext, collision_objs)
         return {"FINISHED"}

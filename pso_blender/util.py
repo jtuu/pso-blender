@@ -19,11 +19,13 @@ class Texture:
     generate_mipmaps: bool
     has_alpha: bool
     image: bpy.types.Image
+    animation_frames: int
 
-    def __init__(self, *args, id: int=None, image: bpy.types.Image, generate_mipmaps: bool=False):
+    def __init__(self, *args, id: int=None, image: bpy.types.Image, generate_mipmaps: bool=False, animation_frames: int=0):
         self.id = id
         self.image = image
         self.generate_mipmaps = generate_mipmaps
+        self.animation_frames = animation_frames
         # Check if texture uses alpha
         self.has_alpha = image.channels == 4
         if self.has_alpha:

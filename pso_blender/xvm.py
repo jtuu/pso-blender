@@ -18,6 +18,16 @@ Ptr32 = Numeric.Ptr32
 NULLPTR = Numeric.NULLPTR
 
 
+# Can't figure out how to get all of the frames out of an image sequence shader node, so we need to do it like this
+def get_image_sequence_images(img: bpy.types.Image) -> list[bpy.types.Image]:
+    dirname = os.path.dirname(img.filepath_from_user())
+    frame_names = []
+    for item in os.listdir(dirname):
+        if os.path.isfile(os.path.join(dirname, item)):
+            frame_names.append(item)
+    return [bpy.data.images.load(os.path.join(dirname, name)) for name in sorted(frame_names)]
+
+
 class XvrFormat:
     A8R8G8B8 = 1
     R5G6B5 = 2
@@ -98,7 +108,19 @@ class TextureManager:
         self._textures_by_path = dict()
         for obj in objects:
             textures = get_object_diffuse_textures(obj)
+            including_animated_textures = []
+
+            # Get animated textures
             for tex in textures:
+                including_animated_textures.append(tex)
+                if tex.image.source == "SEQUENCE":
+                    other_frames = get_image_sequence_images(tex.image)[1:] # Skip first because we already added it
+                    tex.animation_frames = len(other_frames) + 1
+                    for frame in other_frames:
+                        including_animated_textures.append(
+                            Texture(generate_mipmaps=tex.generate_mipmaps, image=frame))
+
+            for tex in including_animated_textures:
                 w, h = tex.image.size
                 # If the image file is not found on disk the texture will still exist but without pixels
                 if w == 0 or h == 0 or len(tex.image.pixels) < 1:
@@ -128,6 +150,18 @@ class TextureManager:
     
     def has_textures(self) -> bool:
         return len(self._textures_by_path) > 0
+    
+    def has_animated_textures(self) -> bool:
+        for key in self._textures_by_path:
+            if self._textures_by_path[key].image.source == "SEQUENCE":
+                return True
+        return False
+    
+    def get_object_animated_texture(self, obj: bpy.types.Object) -> Texture:
+        for tex in self.get_object_textures(obj):
+            if tex.image.source == "SEQUENCE":
+                return tex
+        return None
 
 
 def generate_mipmaps(image: bpy.types.Image, has_alpha: bool) -> list[bpy.types.Image]:

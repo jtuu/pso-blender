@@ -5,7 +5,7 @@ from warnings import warn
 import bpy.types
 from .rel import Rel
 from .serialization import Serializable, Numeric, AlignedString
-from . import util, xvm, xj
+from . import util, xvm, xj, tam
 from .njcm import MeshTreeNode
 from .njtl import TextureList, TextureListEntry
 
@@ -24,13 +24,24 @@ NULLPTR = Numeric.NULLPTR
 class MeshTreeFlag:
     NO_FOG = 0x1
     RECEIVES_SHADOWS = 0x10
+    HAS_UV_ANIMATION = 0x20
+    HAS_TEXTURE_ANIMATION = 0x40
+
+
+@dataclass
+class TextureAnimationInfo(Serializable):
+    animation_id: U16 = 0 # Needs to match .tam entry
+    unk1: U16 = 0
+    current_texture_index: U16 = 0 # Set at runtime
+    frame_counter: U16 = 0 # ...
+    frame_delay: U32 = 0 # ...
 
 
 @dataclass
 class MeshTree(Serializable):
     root_node: Ptr32 = NULLPTR # MeshTreeNode
-    unk1: U32 = 0
-    unk2: U32 = 0
+    unk1: U32 = 0 # Has somethign to do with UV animations
+    texture_animation_info: Ptr32 = NULLPTR # TextureAnimationInfo
     tree_flags: U32 = 0
 
 
@@ -137,7 +148,7 @@ def assign_objects_to_chunks(objects: list[bpy.types.Object], chunk_markers: lis
     return chunk_to_children
 
 
-def write(nrel_path: str, xvm_path: str, objects: list[bpy.types.Object], chunk_markers: list[bpy.types.Object]):
+def write(nrel_path: str, xvm_path: str, tam_path: str, objects: list[bpy.types.Object], chunk_markers: list[bpy.types.Object]):
     rel = Rel()
     nrel = NrelFmt2()
     texture_man = xvm.TextureManager(objects)
@@ -155,13 +166,24 @@ def write(nrel_path: str, xvm_path: str, objects: list[bpy.types.Object], chunk_
             util.scale_mesh(blender_mesh, util.get_pso_world_scale())
             if len(blender_mesh.loop_triangles) < 1:
                 raise NrelError("Object has no faces.", obj=obj)
+
+            anim_tex = texture_man.get_object_animated_texture(obj)
+
             # One mesh per tree. Create tree, a node, and the mesh.
             tree_flags = 0
             if not obj.rel_settings.receives_fog:
                 tree_flags |= MeshTreeFlag.NO_FOG
             if obj.rel_settings.receives_shadows:
                 tree_flags |= MeshTreeFlag.RECEIVES_SHADOWS
+            if anim_tex:
+                tree_flags |= MeshTreeFlag.HAS_TEXTURE_ANIMATION
+
             static_mesh_tree = MeshTree(tree_flags=tree_flags)
+
+            if anim_tex:
+                # Just use the texture id as the animation id
+                static_mesh_tree.texture_animation_info = rel.write(
+                    TextureAnimationInfo(animation_id=anim_tex.id & 0xffff))
 
             mesh_world_pos = util.from_blender_axes(obj.location * util.get_pso_world_scale())
             mesh_node = MeshTreeNode(
@@ -208,3 +230,5 @@ def write(nrel_path: str, xvm_path: str, objects: list[bpy.types.Object], chunk_
         f.write(file_contents)
     if xvm_path and len(textures) > 0:
         xvm.write(xvm_path, textures)
+    if tam_path and texture_man.has_animated_textures():
+        tam.write(tam_path, texture_man, objects)

@@ -53,7 +53,7 @@ class XjMaterialSettingsPanel(bpy.types.Panel):
 
     @classmethod
     def poll(self, context):
-        return True
+        return context.material is not None
     
     def draw(self, context):
         self.layout.use_property_split = True
