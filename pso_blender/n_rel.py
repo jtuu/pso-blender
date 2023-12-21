@@ -1,10 +1,10 @@
 import math
 from mathutils import Vector
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from warnings import warn
 import bpy.types
 from .rel import Rel
-from .serialization import Serializable, Numeric, AlignedString
+from .serialization import Serializable, Numeric, AlignedString, FixedArray
 from . import util, xvm, xj, tam
 from .njcm import MeshTreeNode
 from .njtl import TextureList, TextureListEntry
@@ -71,7 +71,7 @@ class Chunk(Serializable):
 
 @dataclass
 class NrelFmt2(Serializable):
-    magic: list[U8] = util.magic_field("fmt2")
+    magic: FixedArray(U8, 4) = field(default_factory=list)
     unk1: U32 = 0
     chunk_count: U16 = 0
     unk2: U16 = 0
@@ -150,7 +150,7 @@ def assign_objects_to_chunks(objects: list[bpy.types.Object], chunk_markers: lis
 
 def write(nrel_path: str, xvm_path: str, tam_path: str, objects: list[bpy.types.Object], chunk_markers: list[bpy.types.Object]):
     rel = Rel()
-    nrel = NrelFmt2()
+    nrel = NrelFmt2(magic=util.magic_bytes("fmt2"))
     texture_man = xvm.TextureManager(objects)
     # Create chunks
     chunk_to_children = assign_objects_to_chunks(objects, chunk_markers)
@@ -232,3 +232,76 @@ def write(nrel_path: str, xvm_path: str, tam_path: str, objects: list[bpy.types.
         xvm.write(xvm_path, textures)
     if tam_path and texture_man.has_animated_textures():
         tam.write(tam_path, texture_man, objects)
+
+
+def read(path: str) -> NrelFmt2:
+    with open(path, "rb") as f:
+        rel = Rel.read_from(bytearray(f.read()))
+    (nrel, _) = rel.read(NrelFmt2, rel.payload_offset)
+
+    fmt_magic = util.bytes_to_string(nrel.magic)
+    if fmt_magic == "fmt1":
+        raise Exception("n.rel fmt1 is unimplemented")
+    elif fmt_magic == "fmt2":
+        pass
+    else:
+        raise Exception("Unknown n.rel format '{}'".format(fmt_magic))
+    
+    chunks = Chunk.read_sequence(rel.buf.buffer, nrel.chunks, nrel.chunk_count)
+    nrel.chunks = chunks
+
+    for chunk in chunks:
+        static_trees = MeshTree.read_sequence(rel.buf.buffer, chunk.static_mesh_trees, chunk.static_mesh_tree_count)
+        anim_trees = MeshTree.read_sequence(rel.buf.buffer, chunk.animated_mesh_trees, chunk.animated_mesh_tree_count)
+
+        chunk.static_mesh_trees = static_trees
+        chunk.animated_mesh_trees = anim_trees
+
+        for tree in static_trees:
+            (root_node, _) = MeshTreeNode.read_tree(xj.Mesh, rel.buf.buffer, tree.root_node)
+            tree.root_node = root_node
+
+    return nrel
+
+
+def to_blender(name: str, nrel: NrelFmt2) -> bpy.types.Collection:
+    collection = bpy.data.collections.new(name)
+    world_scale = util.get_pso_world_scale()
+
+    chunk_markers = bpy.data.collections.new("chunk_markers")
+    collection.children.link(chunk_markers)
+    for chunk in nrel.chunks:
+        chunk_coll = bpy.data.collections.new("chunk_" + str(chunk.id))
+        collection.children.link(chunk_coll)
+
+        chunk.x /= world_scale
+        chunk.y /= world_scale
+        chunk.z /= world_scale
+
+        bpy.ops.mesh.primitive_uv_sphere_add(
+            segments=4,
+            ring_count=4,
+            location=(chunk.x, chunk.z, chunk.y))
+        obj = bpy.context.active_object
+        obj.name = "chunk_marker_" + str(chunk.id)
+        obj.rel_settings.is_chunk = True
+        # Primitives get automatically added to default collection, remove it and add it to our collection
+        obj.users_collection[0].objects.unlink(obj)
+        chunk_markers.objects.link(obj)
+
+        tree_counter = 0
+        for tree in chunk.static_mesh_trees:
+            models = xj.xj_to_blender_mesh("mesh_{}_{}".format(chunk.id, tree_counter), tree.root_node)
+            for obj in models.objects:
+                util.scale_mesh(obj.data, 1 / world_scale)
+
+                obj.location = (
+                    chunk.x + obj.location.x / world_scale,
+                    chunk.z + obj.location.y / world_scale,
+                    chunk.y + obj.location.z / world_scale)
+                obj.rel_settings.is_nrel = True
+
+            chunk_coll.children.link(models)
+            tree_counter += 1
+
+    return collection

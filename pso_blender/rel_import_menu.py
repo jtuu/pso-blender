@@ -2,7 +2,7 @@ import bpy, os
 from bpy_extras.io_utils import ImportHelper
 from bpy.types import Operator
 from bpy.props import StringProperty
-from . import c_rel
+from . import c_rel, n_rel
 
 
 class ImportRel(Operator, ImportHelper):
@@ -25,7 +25,9 @@ class ImportRel(Operator, ImportHelper):
 
         if suffix == "c":
             collection = c_rel.read(self.filepath)
-        elif suffix == "n" or suffix == "r":
+        elif suffix == "n":
+            collection = n_rel.to_blender(filename, n_rel.read(self.filepath))
+        elif suffix == "r":
             self.report({"ERROR"}, "Unimplemented file type for import")
         else:
             self.report({"ERROR"}, "Could not detect REL file type based on filename. Expected a filename ending in 'n.rel', 'c.rel', or 'r.rel'.")

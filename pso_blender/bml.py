@@ -133,7 +133,8 @@ def to_blender_mesh(bml_item: BmlItem) -> list[bpy.types.Collection]:
     collections = []
     if bml_item.name.endswith(".xj"):
         for model in bml_item.models:
-            collections.append(xj.xj_to_blender_mesh(bml_item.name, model, 0))
+            (root_node, _) = njcm.MeshTreeNode.read_tree(xj.Mesh, model, 0)
+            collections.append(xj.xj_to_blender_mesh(bml_item.name, root_node))
     elif bml_item.name.endswith(".nj"):
         for model in bml_item.models:
             collections.append(nj_to_blender_mesh(bml_item.name, model, 0))

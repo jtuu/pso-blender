@@ -19,6 +19,10 @@ Ptr32 = Numeric.Ptr32
 NULLPTR = Numeric.NULLPTR
 
 
+def vertex_has_color(fmt: int) -> bool:
+    return fmt == 4 or fmt == 5 or fmt == 6 or fmt == 7
+
+
 @dataclass
 class VertexFormat1(Serializable):
     x: F32 = 0.0
@@ -67,6 +71,20 @@ class VertexFormat5(Serializable):
 
 
 @dataclass
+class VertexFormat6(Serializable):
+    x: F32 = 0.0
+    y: F32 = 0.0
+    z: F32 = 0.0
+    r: U8 = 0xff
+    g: U8 = 0
+    b: U8 = 0xff
+    a: U8 = 0xff
+    nx: F32 = 0.0
+    ny: F32 = 0.0
+    nz: F32 = 0.0
+
+
+@dataclass
 class VertexFormat7(Serializable):
     x: F32 = 0.0
     y: F32 = 0.0
@@ -104,6 +122,11 @@ class VertexBufferFormat5(Serializable):
 
 
 @dataclass
+class VertexBufferFormat6(Serializable):
+    vertices: list[VertexFormat6] = field(default_factory=list)
+
+
+@dataclass
 class VertexBufferFormat7(Serializable):
     vertices: list[VertexFormat7] = field(default_factory=list)
 
@@ -132,6 +155,8 @@ class VertexBufferContainer(Serializable):
             vert_ctor = VertexFormat4
         elif vertex_format == 5:
             vert_ctor = VertexFormat5
+        elif vertex_format == 6:
+            vert_ctor = VertexFormat6
         elif vertex_format == 7:
             vert_ctor = VertexFormat7
         else:
@@ -501,35 +526,36 @@ def make_renderstate_args(
     return rs_args
 
 
-def xj_to_blender_mesh(name: str, buf: bytearray, offset: int) -> bpy.types.Collection:
-    (model, _) = MeshTreeNode.read_tree(Mesh, buf, offset)
+def xj_to_blender_mesh(name: str, node: MeshTreeNode) -> bpy.types.Collection:
     collection = bpy.data.collections.new(name)
 
-    # Find all meshes in model tree
-    search_stack = [model]
-    while len(search_stack) > 0:
-        model = search_stack.pop()
+    world_scale = 1
 
-        if model == NULLPTR:
+    # Find all meshes in model tree
+    search_stack = [node]
+    while len(search_stack) > 0:
+        node = search_stack.pop()
+
+        if node == NULLPTR:
             continue
         
         # Search children and siblings
-        search_stack.append(model.child)
-        search_stack.append(model.next)
+        search_stack.append(node.child)
+        search_stack.append(node.next)
 
-        if model.mesh == NULLPTR:
+        if node.mesh == NULLPTR:
             continue
 
         vertices = []
         faces = []
 
         # Get vertices
-        for vertex_buffer in model.mesh.vertex_buffers:
+        for vertex_buffer in node.mesh.vertex_buffers:
             for vertex in vertex_buffer.vertex_buffer:
                 vertices.append((vertex.x, vertex.z, vertex.y))
 
         # Get indices
-        for index_buffer in model.mesh.index_buffers + model.mesh.alpha_index_buffers:
+        for index_buffer in node.mesh.index_buffers + node.mesh.alpha_index_buffers:
             indices = index_buffer.index_buffer
             swap = False
             for i in range(len(indices) - 2):
@@ -546,7 +572,21 @@ def xj_to_blender_mesh(name: str, buf: bytearray, offset: int) -> bpy.types.Coll
         blender_mesh = bpy.data.meshes.new("mesh_" + name)
         blender_mesh.from_pydata(vertices, [], faces)
         blender_mesh.update()
+        util.scale_mesh(blender_mesh, node.scale_x, node.scale_z, node.scale_y)
         obj = bpy.data.objects.new(name, blender_mesh)
+        obj.location = (node.x / world_scale, node.z / world_scale, node.y / world_scale)
+        obj.rotation_euler = (node.rot_x / 0xffff, node.rot_z / 0xffff, node.rot_y / 0xffff)
+
+        colors = obj.data.color_attributes.new("vertex_color", "FLOAT_COLOR", "POINT")
+        vert_idx = 0
+        for vertex_buffer in node.mesh.vertex_buffers:
+            for vertex in vertex_buffer.vertex_buffer:
+                if vertex_has_color(vertex_buffer.vertex_format):
+                    colors.data[vert_idx].color[0] = vertex.r / 0xff
+                    colors.data[vert_idx].color[1] = vertex.g / 0xff
+                    colors.data[vert_idx].color[2] = vertex.b / 0xff
+                vert_idx += 1
+
         collection.objects.link(obj)
     return collection
 
@@ -629,7 +669,8 @@ def read(path: str) -> list[bpy.types.Collection]:
                 # Could maybe check if pointers to 0 are valid?
                 _ = parse_pof0(filename, file_contents, prev_chunk_offset, prev_chunk_size, chunk_offset, chunk_header.body_size)
                 # Read a NJCM
-                collections.append(xj_to_blender_mesh(filename, file_contents[prev_chunk_offset + chunk_header_size:], 0))
+                (root_node, _) = MeshTreeNode.read_tree(Mesh, file_contents[prev_chunk_offset + chunk_header_size:], 0)
+                collections.append(xj_to_blender_mesh(filename, root_node))
                 need_pof0 = False
         prev_chunk_offset = chunk_offset
         prev_chunk_size = chunk_header.body_size

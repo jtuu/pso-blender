@@ -97,8 +97,12 @@ def align_up(n: int, to: int) -> int:
     return (n + to - 1) // to * to
 
 
-def scale_mesh(mesh: bpy.types.Mesh, scale: float):
-    mesh.transform(Matrix.LocRotScale(None, None, Vector((scale, scale, scale))))
+def scale_mesh(mesh: bpy.types.Mesh, x: float, y: float=None, z: float=None):
+    if y is None:
+        y = x
+    if z is None:
+        z = x
+    mesh.transform(Matrix.LocRotScale(None, None, Vector((x, y, z))))
 
 
 def get_pso_world_scale() -> float:
